@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KidGuard 电脑控制台</title>
+<style>
+  :root{
+    --bg:#0e1116; --card:#161b22; --card2:#1c232c; --line:#2a3240; --fg:#e6edf3; --dim:#8b98a5;
+    --accent:#2f81f7; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --chip:#21262d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 "Microsoft YaHei","Segoe UI",system-ui,sans-serif}
+  header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 18px;background:linear-gradient(90deg,#12202f,#0e1116);border-bottom:1px solid var(--line)}
+  h1{font-size:17px;margin:0 12px 0 0;font-weight:600}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:99px;background:var(--chip);border:1px solid var(--line);font-size:12px;color:var(--dim)}
+  .chip b{color:var(--fg);font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--bad)}
+  .dot.on{background:var(--ok)}
+  nav{display:flex;gap:2px;padding:0 14px;border-bottom:1px solid var(--line);background:#12161c;position:sticky;top:0;z-index:5}
+  nav button{background:none;border:none;color:var(--dim);padding:11px 16px;cursor:pointer;font-size:14px;border-bottom:2px solid transparent}
+  nav button.sel{color:var(--fg);border-bottom-color:var(--accent)}
+  main{padding:16px 18px 60px;max-width:1100px}
+  .pane{display:none}.pane.sel{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+  .card h2{font-size:14px;margin:0 0 10px;color:var(--fg);font-weight:600;display:flex;align-items:center;gap:8px}
+  .card h2 span.hint{font-weight:400;color:var(--dim);font-size:12px}
+  .cards{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+  .stat{flex:1 1 150px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .stat .k{color:var(--dim);font-size:12px}
+  .stat .v{font-size:22px;font-weight:600;margin-top:4px}
+  .stat .v small{font-size:12px;color:var(--dim);font-weight:400}
+  button.btn{background:var(--card2);color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px}
+  button.btn:hover{border-color:var(--accent)}
+  button.btn.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.btn.danger{border-color:#6b2b2b;color:#ffb4ae}
+  button.btn:disabled{opacity:.45;cursor:not-allowed}
+  input[type=text],input[type=number],input[type=password],select,textarea{background:#0d1117;border:1px solid var(--line);color:var(--fg);border-radius:7px;padding:7px 9px;font-size:13px;font-family:inherit}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px;min-height:26px}
+  .kw{display:inline-flex;align-items:center;gap:6px;background:var(--chip);border:1px solid var(--line);border-radius:99px;padding:3px 6px 3px 11px;font-size:13px}
+  .kw .x{cursor:pointer;color:var(--dim);font-weight:700;padding:0 4px;border-radius:99px}
+  .kw .x:hover{color:var(--bad);background:#2b1a1a}
+  .kw.empty{color:var(--dim);border-style:dashed}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top;word-break:break-all}
+  th{color:var(--dim);font-weight:500;font-size:12px}
+  tr.diff td:nth-child(3){color:var(--warn)}
+  .sw{display:flex;flex-wrap:wrap;gap:14px}
+  label.sw-item{display:flex;gap:7px;align-items:center;background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;user-select:none}
+  label.sw-item input{accent-color:var(--accent);width:15px;height:15px}
+  pre{background:#0d1117;border:1px solid var(--line);border-radius:8px;padding:10px;overflow:auto;max-height:260px;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0}
+  .muted{color:var(--dim);font-size:12px}
+  #log{position:fixed;left:0;right:0;bottom:0;max-height:130px;overflow:auto;background:#0b0e13;border-top:1px solid var(--line);padding:8px 16px;font-size:12px;color:var(--dim);font-family:Consolas,monospace}
+  #log .ok{color:var(--ok)}#log .bad{color:var(--bad)}#log .warn{color:var(--warn)}
+  .toast{position:fixed;right:18px;top:70px;background:var(--card2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:10px 14px;max-width:460px;z-index:20;box-shadow:0 6px 24px #0008;display:none;white-space:pre-wrap}
+  .toast.on{display:block}
+  .toast.ok{border-left-color:var(--ok)}.toast.bad{border-left-color:var(--bad)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:820px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛡 KidGuard 电脑控制台</h1>
+  <span class="chip"><i class="dot" id="dottv"></i>电视 <b id="devname">未连接</b></span>
+  <span class="chip">状态 <b id="lockname">—</b></span>
+  <span style="flex:1"></span>
+  <input type="text" id="ip" placeholder="电视 IP，如 192.168.1.50" style="width:190px">
+  <button class="btn" onclick="doConnect()">连接</button>
+  <input type="password" id="pin" placeholder="家长 PIN" style="width:110px">
+  <label class="muted" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="rempin">记住</label>
+  <button class="btn" onclick="refresh(true)">刷新</button>
+</header>
+
+<nav>
+  <button class="sel" data-p="p1" onclick="tab('p1',this)">概览</button>
+  <button data-p="p2" onclick="tab('p2',this)">名单（黑/白名单）</button>
+  <button data-p="p3" onclick="tab('p3',this)">时间与开关</button>
+  <button data-p="p4" onclick="tab('p4',this)">同步配置</button>
+</nav>
+
+<main>
+  <!-- 概览 -->
+  <section class="pane sel" id="p1">
+    <div class="cards">
+      <div class="stat"><div class="k">今日已用</div><div class="v" id="s-used">—</div></div>
+      <div class="stat"><div class="k">距锁定还剩</div><div class="v" id="s-rem">—</div></div>
+      <div class="stat"><div class="k">每日上限（含加时）</div><div class="v" id="s-lim">—</div></div>
+      <div class="stat"><div class="k">当前状态</div><div class="v" id="s-lock">—</div></div>
+    </div>
+
+    <div class="card">
+      <h2>快捷操作</h2>
+      <div class="row">
+        <button class="btn pri" onclick="cmd('lock',null,'已强制锁定')">立即锁定</button>
+        <button class="btn" onclick="cmd('unlock',null,'已解除锁定（挂起的应用已恢复）')">解除锁定</button>
+        <button class="btn" onclick="cmd('add',String(addStep),'加时')">加时 <span id="addStepTxt">30</span> 分钟</button>
+        <button class="btn" onclick="cmd('free',null,'今天免管（放到明天换天）')">今天免管</button>
+        <button class="btn" onclick="cmd('reset',null,'今日用量清零')">今日清零</button>
+        <button class="btn danger" onclick="cmd('resume',null,'恢复全部挂起的应用')">恢复全部挂起</button>
+        <button class="btn" onclick="cmd('cover-now',null,'在电视上盖一次黑幕（测试）')">测试黑幕</button>
+      </div>
+      <p class="muted" style="margin:10px 0 0">“解除锁定”会撤销强制锁定并恢复所有被挂起的应用；如果今天时长已经用完，还需要“加时”或“今天免管”。</p>
+    </div>
+
+    <div class="card">
+      <h2>电视实况 <span class="hint">来自 /sdcard/kidguard/status.txt</span></h2>
+      <div class="sw" id="p1-switches"></div>
+      <div id="p1-tv" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h2>电视原始状态</h2>
+      <pre id="p1-raw">—</pre>
+    </div>
+  </section>
+
+  <!-- 名单 -->
+  <section class="pane" id="p2">
+    <div class="card">
+      <h2>黑名单关键字 <span class="hint">模糊匹配：页面上出现这几个字就拦（用专名，别用「游戏/动画」这类通用词）</span></h2>
+      <div class="chips" id="c-blkw"></div>
+      <div class="row">
+        <input type="text" id="in-blkw" placeholder="例如 熊出没" style="width:220px">
+        <button class="btn pri" onclick="addKw('blkw-add','in-blkw','关键字')">添加</button>
+        <span class="muted">常用：</span>
+        <span id="quickkw"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>黑名单片名 <span class="hint">整名匹配（写完整片名更准）</span></h2>
+      <div class="chips" id="c-bltitle"></div>
+      <div class="row">
+        <input type="text" id="in-bltitle" placeholder="例如 喜羊羊与灰太狼" style="width:260px">
+        <button class="btn pri" onclick="addKw('bltitle-add','in-bltitle','片名')">添加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>黑名单应用 <span class="hint">这些 App 直接拦（锁定时还会被挂起，点不开）</span></h2>
+      <div class="chips" id="c-blpkg"></div>
+      <div class="row">
+        <select id="in-blpkg" style="min-width:260px"><option value="">点这里从「已装应用」里选…</option></select>
+        <button class="btn" onclick="loadApps()">刷新列表</button>
+        <button class="btn pri" onclick="addKw('blpkg-add','in-blpkg','应用')">添加</button>
+      </div>
+      <p class="muted" style="margin:8px 0 0">提示：当贝桌面/系统桌面这类「桌面」应用系统不允许挂起，加进来也不会生效。</p>
+    </div>
+
+    <div class="card">
+      <h2>白名单 <span class="hint">非空时反转为「只允许白名单里的应用」</span></h2>
+      <div class="chips" id="c-white"></div>
+      <div class="row">
+        <select id="in-white" style="min-width:260px"><option value="">从「已装应用」里选…</option></select>
+        <button class="btn pri" onclick="addKw('wl-add','in-white','白名单')">添加</button>
+        <button class="btn danger" onclick="cmd('wl-del','__ALL__','清空白名单')">清空（撤销白名单模式）</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>命中自测 <span class="hint">输入一段文字，看会不会被拦</span></h2>
+      <div class="row">
+        <input type="text" id="in-test" placeholder="例如 小猪佩奇 第3集" style="width:280px">
+        <button class="btn" onclick="testBlk()">测一下</button>
+      </div>
+      <pre id="test-out" style="margin-top:10px;display:none"></pre>
+    </div>
+  </section>
+
+  <!-- 时间与开关 -->
+  <section class="pane" id="p3">
+    <div class="card">
+      <h2>计时规则</h2>
+      <div class="row">
+        <label>每日上限 <input type="number" id="in-limit" min="1" max="1440" style="width:90px"> 分钟</label>
+        <button class="btn pri" onclick="setNum('limit','in-limit','每日上限')">应用</button>
+        <span style="width:22px"></span>
+        <label>每次加时 <input type="number" id="in-step" min="1" max="240" style="width:90px"> 分钟</label>
+        <button class="btn pri" onclick="setNum('step','in-step','加时步长')">应用</button>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <label>黑名单遮罩 <input type="number" id="in-cover" min="1" max="10" style="width:70px"> 秒</label>
+        <button class="btn pri" onclick="setNum('coversec','in-cover','黑名单遮罩时长')">应用</button>
+        <span style="width:22px"></span>
+        <span class="muted">命中被拦内容后，黑幕盖住、遥控器按不动的秒数（1~10）</span>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" onclick="cmd('add','15','加时 15 分钟')">+15 分</button>
+        <button class="btn" onclick="cmd('add','30','加时 30 分钟')">+30 分</button>
+        <button class="btn" onclick="cmd('add','60','加时 60 分钟')">+60 分</button>
+        <input type="number" id="in-add" placeholder="自定义" style="width:96px">
+        <button class="btn" onclick="addCustom()">加时</button>
+      </div>
+      <p class="muted" style="margin:10px 0 0">计时在每天 04:00 换天；「加时」只对今天有效。</p>
+    </div>
+
+    <div class="card">
+      <h2>开关</h2>
+      <div class="sw" id="p3-switches"></div>
+      <p class="muted" style="margin:10px 0 0">「管控总开关」关掉 = 完全不管（不计时、不拦截、挂起的应用全部恢复）；「预览严格模式」开 = 读不到片名也切自动预览，可能误伤，建议先用命中自测权衡。</p>
+    </div>
+
+    <div class="card">
+      <h2>家长 PIN</h2>
+      <div class="row">
+        <input type="password" id="in-newpin" placeholder="新的 PIN（4~12 位）" style="width:200px">
+        <button class="btn pri" onclick="changePin()">修改</button>
+      </div>
+      <p class="muted" style="margin:8px 0 0">修改 PIN 用页面上方填的当前 PIN 鉴权；改完请在上方也更新为新 PIN。</p>
+    </div>
+
+    <div class="card">
+      <h2>强锁目标预览 <span class="hint">锁定「强锁模式」会挂起哪些应用</span></h2>
+      <div class="row"><button class="btn" onclick="targets()">看看会挂起谁</button></div>
+      <pre id="targets-out" style="margin-top:10px;display:none"></pre>
+    </div>
+  </section>
+
+  <!-- 同步 -->
+  <section class="pane" id="p4">
+    <div class="card">
+      <h2>两个方向</h2>
+      <div class="row">
+        <button class="btn pri" onclick="download()">⬇ 从电视下载配置（电视 → 本机）</button>
+        <button class="btn" onclick="upload()">⬆ 上传配置到电视（本机 → 电视）</button>
+        <button class="btn" onclick="refresh(true)">重新对比</button>
+      </div>
+      <p class="muted" style="margin:10px 0 0">
+        “下载”把电视上现在的全部设置（上限/步长/各开关/四张名单）存成本机配置文件；“上传”把本机文件整包写到电视上，
+        <b>上传前会自动把电视当前配置备份</b>到 <span id="bakpath">config\备份\</span>。上传需要家长 PIN。
+      </p>
+      <p class="muted" style="margin:6px 0 0">本机配置文件：<b id="localpath">—</b></p>
+    </div>
+
+    <div class="card">
+      <h2>差异对比 <span class="hint">本机 ≠ 电视 的项</span></h2>
+      <label class="muted" style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="checkbox" id="showall" onchange="renderDiff()">显示全部项</label>
+      <table>
+        <thead><tr><th style="width:130px">项</th><th>电视</th><th>本机</th></tr></thead>
+        <tbody id="diffbody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>本机配置（可编辑）</h2>
+      <textarea id="localtext" style="width:100%;height:230px;font-family:Consolas,monospace"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn pri" onclick="saveLocal()">保存到本机</button>
+        <button class="btn" onclick="loadFromTv()">用电视内容覆盖编辑框</button>
+        <button class="btn danger" onclick="if(confirm('恢复成默认配置？（只改编辑框，点保存才写文件）'))resetEditor()">恢复默认模板</button>
+      </div>
+      <p class="muted" style="margin:8px 0 0">也可以直接在这里手改（格式：<code>key=值</code>，列表用半角逗号），改完点“保存到本机”，再点上面的“上传配置到电视”。</p>
+    </div>
+
+    <div class="card">
+      <h2>备份</h2>
+      <table>
+        <thead><tr><th style="width:200px">文件</th><th style="width:150px">时间</th><th style="width:90px">大小</th><th></th></tr></thead>
+        <tbody id="bakbody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>电视当前配置（只读）</h2>
+      <pre id="tvconf">—</pre>
+    </div>
+
+    <div class="card">
+      <h2>最近一次操作的输出</h2>
+      <pre id="lastout">—</pre>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+<div id="log"><div>控制台就绪。把电视 IP 填到右上角，点「连接」。</div></div>
+
+<script>
+const TOKEN = '__KG_TOKEN__';
+let S = null;          // 服务器返回的状态快照
+let addStep = 30;
+let appsLoaded = false;
+
+/* ------------------------------------------------------------------ 基础 */
+function $(id){ return document.getElementById(id); }
+/* 服务器返回的数组：0 项会变成 null，1 项会变成对象（PowerShell 的 ConvertTo-Json 特性），统一成数组 */
+function arr(x){ if (x === null || x === undefined) return []; return Array.isArray(x) ? x : [x]; }
+function log(msg, cls){
+  const d = document.createElement('div');
+  const t = new Date().toTimeString().slice(0,8);
+  d.className = cls || '';
+  d.textContent = '[' + t + '] ' + msg;
+  $('log').appendChild(d);
+  $('log').scrollTop = $('log').scrollHeight;
+  while ($('log').childElementCount > 200) $('log').removeChild($('log').firstChild);
+}
+let toastTimer = null;
+function toast(ok, msg, out){
+  const el = $('toast');
+  el.className = 'toast on ' + (ok ? 'ok' : 'bad');
+  let s = (ok ? '✅ ' : '⛔ ') + (msg || (ok ? '完成' : '失败'));
+  if (out && typeof out === 'string' && out.trim()) s += '\n' + out.trim().slice(0, 800);
+  el.textContent = s;
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = 'toast'; }, ok ? 6000 : 12000);
+  log((ok ? '✔ ' : '✘ ') + (msg || '') + (out && typeof out === 'string' ? ('  ' + out.trim().slice(0,200)) : ''), ok ? 'ok' : 'bad');
+}
+async function call(op, args){
+  try{
+    const r = await fetch('/api/call', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'X-KG-Token':TOKEN},
+      body: JSON.stringify({op: op, args: args || {}})
+    });
+    const j = await r.json();
+    if (j.state){ S = j.state; renderAll(); }
+    return j;
+  }catch(e){
+    toast(false, '控制台和后台断了：' + e.message + '（是不是把那个黑窗口关掉了？重新双击 6-电脑控制台.bat）');
+    return {ok:false, msg:'fetch 失败'};
+  }
+}
+function pin(){ return $('pin').value.trim(); }
+function needPin(){
+  if (pin()) return true;
+  toast(false, '请先在右上角填家长 PIN（默认 1234，如果没改过）'); $('pin').focus(); return false;
+}
+
+/* ------------------------------------------------------------------ 操作 */
+function tab(id, btn){
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('sel', p.id === id));
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('sel', b === btn));
+}
+async function doConnect(){
+  const ip = $('ip').value.trim();
+  if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) { toast(false, '先填电视 IP，例如 192.168.1.50'); return; }
+  log('连接 ' + ip + ' …');
+  const j = await call('connect', {ip:ip});
+  toast(j.ok, j.msg || (j.ok ? '已连接' : '连不上'));
+}
+async function refresh(manual){
+  if (manual) log('刷新状态…');
+  await call('state', {});
+}
+async function cmd(c, val, what){
+  if (needsPinArg(c) && !needPin()) return;
+  const j = await call('do', {cmd:c, val: (val === null || val === undefined) ? null : String(val), pin:pin()});
+  toast(j.ok, (j.msg || what || c));
+  if (j.ok && c === 'reset') log('已清零');
+}
+function needsPinArg(c){
+  return !['status','apps','dump','owner','acc','ping','conf','targets','test-blk','cover-now'].includes(c);
+}
+function rememberPin(){
+  try{
+    if ($('rempin').checked) localStorage.setItem('kg_pin', $('pin').value);
+    else localStorage.removeItem('kg_pin');
+  }catch(e){}
+}
+
+/* 名单 */
+async function addKw(c, inputId, what){
+  const el = $(inputId);
+  const v = el.value.trim();
+  if (!v) { toast(false, '先填一个' + what); return; }
+  const j = await call('do', {cmd:c, val:v, pin:pin()});
+  toast(j.ok, j.msg);
+  if (j.ok) { el.value = ''; log('已添加' + what + '：' + v); }
+}
+async function delKw(c, v, what){
+  if (!confirm('从' + what + '里删除「' + v + '」？')) return;
+  const j = await call('do', {cmd:c, val:v, pin:pin()});
+  toast(j.ok, j.msg);
+}
+function listOf(key){
+  if (!S || !S.conf || S.conf[key] === undefined || S.conf[key] === '') return [];
+  return String(S.conf[key]).split(/[,，、;；\n]/).map(s => s.trim()).filter(s => s);
+}
+function chips(box, items, delCmd, what){
+  const el = $(box);
+  el.innerHTML = '';
+  if (!items.length){ el.innerHTML = '<span class="kw empty">（空）</span>'; return; }
+  items.forEach(v => {
+    const d = document.createElement('span');
+    d.className = 'kw';
+    d.appendChild(document.createTextNode(v));
+    const x = document.createElement('span');
+    x.className = 'x'; x.textContent = '×'; x.title = '删除';
+    x.onclick = () => delKw(delCmd, v, what);
+    d.appendChild(x);
+    el.appendChild(d);
+  });
+}
+async function loadApps(){
+  log('读取已装应用…');
+  const j = await call('apps', {});
+  if (!j.ok){ toast(false, j.msg || '读不到应用列表'); return; }
+  const list = arr(j.out);
+  ['in-blpkg','in-white'].forEach(id => {
+    const sel = $(id);
+    const keep = sel.value;
+    sel.innerHTML = '<option value="">从「已装应用」里选…</option>';
+    list.sort((a,b) => (a.kind === b.kind) ? a.name.localeCompare(b.name) : (a.kind === 'usr' ? -1 : 1));
+    list.forEach(a => {
+      const o = document.createElement('option');
+      o.value = a.pkg;
+      o.textContent = a.name + (a.kind === 'sys' ? '（系统）' : '') + '  ·  ' + a.pkg;
+      sel.appendChild(o);
+    });
+    if (keep) sel.value = keep;
+  });
+  appsLoaded = true;
+  toast(true, '已装应用 ' + list.length + ' 个');
+}
+async function testBlk(){
+  const t = $('in-test').value.trim();
+  if (!t) return;
+  const j = await call('do', {cmd:'test-blk', val:t, pin:pin()});
+  const p = $('test-out'); p.style.display = 'block'; p.textContent = j.msg || '';
+}
+async function targets(){
+  if (!needPin()) return;
+  const j = await call('do', {cmd:'targets', val:null, pin:pin()});
+  const p = $('targets-out'); p.style.display = 'block';
+  p.textContent = (j.msg || '').replace(/wouldSuspend=/, '锁定后会挂起：\n');
+}
+
+/* 时间与开关 */
+async function setNum(c, inputId, what){
+  const v = $(inputId).value.trim();
+  if (!v) { toast(false, '先填' + what); return; }
+  const j = await call('do', {cmd:c, val:v, pin:pin()});
+  toast(j.ok, j.msg);
+}
+async function addCustom(){
+  const v = $('in-add').value.trim();
+  if (!v) { toast(false, '先填要加多少分钟'); return; }
+  const j = await call('do', {cmd:'add', val:v, pin:pin()});
+  toast(j.ok, j.msg);
+}
+async function changePin(){
+  if (!needPin()) return;
+  const n = $('in-newpin').value.trim();
+  if (n.length < 4) { toast(false, '新 PIN 至少 4 位'); return; }
+  if (!confirm('把家长 PIN 改成 ' + n + ' ？改完请记牢，忘了只能重装。')) return;
+  const j = await call('do', {cmd:'setpin', val:n, pin:pin()});
+  toast(j.ok, j.msg);
+  if (j.ok){ $('pin').value = n; rememberPin(); $('in-newpin').value = ''; }
+}
+async function setSwitch(cmdOn, cmdOff, on){
+  if (!needPin()) return;
+  const j = await call('do', {cmd: on ? cmdOn : cmdOff, val:null, pin:pin()});
+  toast(j.ok, j.msg);
+}
+
+/* 同步 */
+async function download(){
+  const j = await call('download', {});
+  toast(j.ok, j.msg);
+  if (j.ok) syncEditorFromState();
+}
+async function upload(){
+  if (!needPin()) return;
+  if (!confirm('把本机配置整包写到电视上？（电视当前配置会先自动备份）')) return;
+  const j = await call('upload', {pin:pin()});
+  toast(j.ok, j.msg, j.ok ? '' : j.out);
+  if (j.ok) syncEditorFromState();
+}
+async function saveLocal(){
+  const j = await call('saveLocal', {text: $('localtext').value});
+  toast(j.ok, j.msg);
+  if (j.ok) syncEditorFromState();
+}
+async function loadFromTv(){
+  if (!S) return;
+  $('localtext').value = S.confText || '';
+  toast(true, '已把电视配置填进编辑框（点“保存到本机”才写文件）');
+}
+async function resetEditor(){
+  $('localtext').value = [
+    '# KidGuard 配置 v1（默认模板）',
+    'limit=60',
+    'step=30',
+    'guard=1',
+    'enforce=1',
+    'hardlock=1',
+    'bl=1',
+    'blplay=1',
+    'strict=0',
+    'blkw=熊出没,奥特曼,喜羊羊,奶龙',
+    'bltitle=',
+    'blpkg=',
+    'white='
+  ].join('\n');
+}
+async function loadBackup(name){
+  if (!confirm('把备份 ' + name + ' 载入本机配置文件？（当前本机配置会先备份）')) return;
+  const j = await call('loadBackup', {name:name});
+  toast(j.ok, j.msg);
+  if (j.ok) syncEditorFromState();
+}
+function syncEditorFromState(){
+  if (S && typeof S.localText === 'string') $('localtext').value = S.localText;
+}
+
+/* ------------------------------------------------------------------ 渲染 */
+const CONF_LABEL = {
+  limit:'每日上限(分钟)', step:'加时步长(分钟)', guard:'管控总开关', enforce:'应用挂起开关',
+  hardlock:'强锁模式', bl:'内容兜底', blplay:'播放页兜底', strict:'预览严格模式',
+  blkw:'黑名单关键字', bltitle:'黑名单片名', blpkg:'黑名单应用', white:'白名单'
+};
+const SWITCHES = [
+  {key:'guard',    on:'guard-on',    off:'guard-off',    label:'管控总开关'},
+  {key:'enforce',  on:'enforce-on',  off:'enforce-off',  label:'应用挂起开关'},
+  {key:'hardlock', on:'hardlock',    off:'hardlock',     label:'强锁模式', raw:true},
+  {key:'bl',       on:'bl-on',       off:'bl-off',       label:'内容兜底'},
+  {key:'blplay',   on:'blwatch-on',  off:'blwatch-off',  label:'播放页兜底'},
+  {key:'strict',   on:'strictprev-on', off:'strictprev-off', label:'预览严格模式'}
+];
+function isOn(cfgKey){
+  if (!S || !S.conf) return false;
+  const v = String(S.conf[cfgKey]);
+  return v === '1' || v === 'true';
+}
+function renderSwitches(boxId, interactive){
+  const box = $(boxId);
+  box.innerHTML = '';
+  SWITCHES.forEach(sw => {
+    const on = isOn(sw.key);
+    const l = document.createElement('label');
+    l.className = 'sw-item';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.checked = on; cb.disabled = !interactive || !S || !S.tv;
+    cb.onchange = () => { setSwitch(sw.on, sw.off, cb.checked); };
+    l.appendChild(cb);
+    l.appendChild(document.createTextNode(sw.label + ' ' + (on ? '开' : '关')));
+    box.appendChild(l);
+  });
+}
+function renderAll(){
+  const tv = S && S.tv;
+  $('dottv').className = 'dot' + (tv ? ' on' : '');
+  $('devname').textContent = (S && S.device) ? S.device : '未连接';
+  if (S && S.device && S.device.indexOf(':') > 0 && !$('ip').value) $('ip').value = S.device.split(':')[0];
+
+  const st = (S && S.status) ? S.status : {};
+  const locked = String(st['是否已锁定']) === 'true';
+  $('lockname').textContent = tv ? (locked ? '已锁定' : '正常') : '—';
+  $('s-used').innerHTML = (st['今日已用'] || '—') + (st['今日已用'] ? '' : '');
+  $('s-rem').textContent = st['剩余'] || '—';
+  $('s-lim').innerHTML = (st['每日上限'] || '—') + (st['今日加时'] && st['今日加时'] !== '0 分钟' ? ' <small>+ ' + st['今日加时'] + '</small>' : '');
+  $('s-lock').innerHTML = tv
+      ? (locked ? '<span style="color:var(--bad)">已锁定</span>' : '<span style="color:var(--ok)">正常</span>')
+      : '—';
+
+  $('p1-switches').innerHTML = '';
+  renderSwitches('p1-switches', false);
+  renderSwitches('p3-switches', true);
+
+  const rows = [
+    ['DeviceOwner', st['DeviceOwner']],
+    ['无障碍已启用', st['无障碍已启用']],
+    ['已设PIN', st['已设PIN']],
+    ['换天时刻', st['换天时刻']],
+    ['日期桶', st['日期桶']],
+    ['强锁目标', null],
+    ['家长临时放行', st['家长临时放行']],
+    ['已挂起列表', st['已挂起列表']]
+  ];
+  let html = '<table><tbody>';
+  rows.forEach(r => {
+    if (r[1] === undefined || r[1] === null) return;
+    html += '<tr><th style="width:130px">' + r[0] + '</th><td>' + String(r[1]).replace(/</g,'&lt;') + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  $('p1-tv').innerHTML = html;
+  $('p1-raw').textContent = S && S.status ? statusText() : '—';
+
+  // 输入框回填（只看不改）
+  if (tv){
+    if (!$('in-limit').value) $('in-limit').value = S.conf.limit || '';
+    if (!$('in-step').value)  $('in-step').value  = S.conf.step || '';
+    if (!$('in-cover').value) $('in-cover').value = S.conf.coversec || '10';
+    addStep = parseInt(S.conf.step || '30', 10) || 30;
+    $('addStepTxt').textContent = addStep;
+  }
+
+  // 名单 chips
+  if (S && S.conf){
+    chips('c-blkw',    listOf('blkw'),    'blkw-del', '黑名单关键字');
+    chips('c-bltitle', listOf('bltitle'), 'bltitle-del', '黑名单片名');
+    chips('c-blpkg',   listOf('blpkg'),   'blpkg-del', '黑名单应用');
+    chips('c-white',   listOf('white'),   'wl-del', '白名单');
+  }
+
+  renderDiff();
+  $('tvconf').textContent = (S && S.confText) ? S.confText : '—';
+  $('localpath').textContent = (S && S.localPath) ? S.localPath : '—';
+  $('bakpath').textContent = (S && S.localPath) ? S.localPath.replace(/[^\\\/]+$/, '备份\\') : 'config\\备份\\';
+  if (S && typeof S.localText === 'string' && document.activeElement !== $('localtext')) $('localtext').value = S.localText;
+  renderBackups();
+}
+function statusText(){
+  if (!S || !S.status) return '';
+  return Object.keys(S.status).map(k => k + '  ' + S.status[k]).join('\n');
+}
+function renderDiff(){
+  const body = $('diffbody');
+  body.innerHTML = '';
+  const dl = arr(S && S.diff);
+  if (!dl.length){ body.innerHTML = '<tr><td colspan="3" class="muted">（没有对比数据）</td></tr>'; return; }
+  const all = $('showall').checked;
+  const rows = dl.filter(d => all || !d.same);
+  if (!rows.length){
+    body.innerHTML = '<tr><td colspan="3" class="muted">本机文件与电视完全一致，不需要同步。</td></tr>';
+    return;
+  }
+  rows.forEach(d => {
+    const tr = document.createElement('tr');
+    if (!d.same) tr.className = 'diff';
+    tr.innerHTML = '<td>' + (CONF_LABEL[d.key] || d.key) + '</td>'
+                 + '<td>' + esc(d.tv || '（空）') + '</td>'
+                 + '<td>' + esc(d.local || '（空）') + '</td>';
+    body.appendChild(tr);
+  });
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function renderBackups(){
+  const body = $('bakbody');
+  body.innerHTML = '';
+  const list = arr(S && S.backups);
+  if (!list.length){ body.innerHTML = '<tr><td colspan="4" class="muted">（还没有备份。上传/下载时自动生成）</td></tr>'; return; }
+  list.forEach(b => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + esc(b.name) + '</td><td>' + esc(b.time) + '</td><td>' + b.size + ' B</td>'
+                 + '<td><button class="btn" onclick="loadBackup(\'' + esc(b.name) + '\')">载入到本机</button></td>';
+    body.appendChild(tr);
+  });
+}
+function quickKeywords(){
+  const words = ['熊出没','小猪佩奇','汪汪队','奥特曼','喜羊羊','奶龙','植物大战僵尸','我的世界','叶罗丽','精灵梦','爆笑虫子','斗罗大陆'];
+  const box = $('quickkw');
+  box.innerHTML = '';
+  words.forEach(w => {
+    const b = document.createElement('button');
+    b.className = 'btn'; b.style.padding = '4px 8px'; b.style.marginRight = '4px';
+    b.textContent = '+ ' + w;
+    b.onclick = async () => {
+      const j = await call('do', {cmd:'blkw-add', val:w, pin:pin()});
+      toast(j.ok, j.msg);
+    };
+    box.appendChild(b);
+  });
+}
+
+/* ------------------------------------------------------------------ 启动 */
+(function init(){
+  try{
+    const p = localStorage.getItem('kg_pin');
+    if (p){ $('pin').value = p; $('rempin').checked = true; }
+    const ip = localStorage.getItem('kg_ip');
+    if (ip) $('ip').value = ip;
+  }catch(e){}
+  $('pin').addEventListener('change', rememberPin);
+  $('ip').addEventListener('change', () => { try{ localStorage.setItem('kg_ip', $('ip').value); }catch(e){} });
+  quickKeywords();
+  refresh(true);
+  setInterval(() => { if (S && S.tv) refresh(false); }, 60000);
+})();
+</script>
+</body>
+</html>

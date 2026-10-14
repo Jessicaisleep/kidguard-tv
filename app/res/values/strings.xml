@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KidGuard</string>
+    <string name="acc_desc">内容守卫：拦截孩子不该看的视频内容（在优酷等应用中生效）。</string>
+</resources>

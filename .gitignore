@@ -1,0 +1,40 @@
+# ── 构建产物 ───────────────────────────────────────────────
+/build/
+/dist/KidGuard-*.apk.idsig
+*.class
+*.dex
+
+# ── 签名私钥（绝不能进公开库！）────────────────────────────
+/keys/
+*.jks
+*.keystore
+
+# ── 大块本地依赖 / 沙箱工作目录（几百 MB ~ 十几 GB）────────
+# toolchain/  = 内置 JDK + Android SDK build-tools（549 MB）
+# emu/        = 指向工作区 android-emu/ 的交汇点（12.4 GB）
+/toolchain/
+/emu/
+/_tv/
+/_emu/
+/_log/
+/_tmp/
+/android-emu/
+
+# ── 交付包里的 adb 二进制（8.3 MB，用户从 Google 官方或平台工具自取）
+/dist/tools/adb/
+
+# ── 用户数据 / 本机配置（含自家黑名单、电视 IP 等）──────────
+/config/
+/dist/config/
+
+# ── 沙箱专用脚本（写死了 D:\kg\emu 这种本机路径，不对外）────
+/tools/emu-boot.ps1
+/tools/emu-setup.ps1
+/tools/_rm_skip.py
+
+# ── 编辑器 / 系统垃圾 ───────────────────────────────────────
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp

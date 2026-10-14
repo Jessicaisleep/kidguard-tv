@@ -1,0 +1,17 @@
+# 换行符：仓库里统一存 LF，检出时给 Windows 专属文件还原 CRLF
+* text=auto
+
+# .bat 交给 cmd.exe 跑，必须是 CRLF（裸 LF 的批处理在 chcp 65001 下会闪退）
+*.bat   text eol=crlf
+
+# 会被 Windows PowerShell 5.1 执行的脚本：保持原样，别动字节
+# （含中文的 .ps1 带 UTF-8 BOM，BOM 丢了会变乱码 → 解析报错）
+*.ps1   -text
+
+# 二进制，别做任何转换
+*.apk   binary
+*.png   binary
+*.jpg   binary
+*.jks   binary
+*.dll   binary
+*.exe   binary
