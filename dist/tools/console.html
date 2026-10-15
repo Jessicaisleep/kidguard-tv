@@ -69,10 +69,21 @@
   <span style="flex:1"></span>
   <input type="text" id="ip" placeholder="电视 IP，如 192.168.1.50" style="width:190px">
   <button class="btn" onclick="doConnect()">连接</button>
+  <button class="btn pri" id="btnscan" onclick="autoFind()">🔍 自动找电视</button>
   <input type="password" id="pin" placeholder="家长 PIN" style="width:110px">
   <label class="muted" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="rempin">记住</label>
   <button class="btn" onclick="refresh(true)">刷新</button>
 </header>
+
+<!-- 自动找电视的候选列表（平时隐藏） -->
+<div id="scanbox" style="display:none;background:var(--card2);border-bottom:1px solid var(--line);padding:10px 16px">
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <b>扫描结果</b><span class="muted" id="scanmsg">—</span>
+    <span style="flex:1"></span>
+    <button class="btn" onclick="hideScan()">收起</button>
+  </div>
+  <div id="scanlist" style="margin-top:8px"></div>
+</div>
 
 <nav>
   <button class="sel" data-p="p1" onclick="tab('p1',this)">概览</button>
@@ -341,6 +352,55 @@ async function doConnect(){
   const j = await call('connect', {ip:ip});
   toast(j.ok, j.msg || (j.ok ? '已连接' : '连不上'));
 }
+/* 自动找电视：扫本机网段里开着 ADB(5555) 的设备，列出候选让你点 */
+async function autoFind(){
+  const b = $('btnscan');
+  b.disabled = true; const old = b.textContent; b.textContent = '🔍 扫描中…';
+  log('扫描网段（约 1.5 秒）…');
+  const j = await call('scan', {});
+  b.disabled = false; b.textContent = old;
+  const list = arr(j.out);
+  $('scanmsg').textContent = j.msg || '';
+  const box = $('scanlist');
+  box.innerHTML = '';
+  if (!list.length){
+    box.innerHTML = '<span class="muted">没找到。检查：① 电视「ADB 网络调试」是否打开；② 电视和电脑是否同一 WiFi；'
+                  + '③ 也可以在左边手填 IP 点「连接」。</span>';
+    $('scanbox').style.display = 'block';
+    toast(false, j.msg || '没找到电视');
+    return;
+  }
+  list.forEach(c => {
+    const d = document.createElement('div');
+    d.className = 'row'; d.style.marginTop = '6px';
+    const tag = c.kidguard ? ' ✅ 已装 KidGuard' : '';
+    d.innerHTML = '<span style="min-width:300px">' + esc(c.ip) + '　' + esc(c.model || '?')
+                + '　<span class="muted">' + esc(c.brand || '') + esc(tag) + '</span></span>';
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (c.kidguard ? ' pri' : '');
+    btn.textContent = '连这台';
+    btn.onclick = async () => {
+      $('ip').value = c.ip;
+      try{ localStorage.setItem('kg_ip', c.ip); }catch(e){}
+      const r = await call('scan', {ip:c.ip});
+      toast(r.ok, c.ip + ' ' + (r.ok ? '已连上' : '连不上'));
+      if (r.ok) hideScan();
+    };
+    d.appendChild(btn);
+    box.appendChild(d);
+  });
+  $('scanbox').style.display = 'block';
+  // 只有一个候选且装了 KidGuard：直接连上，省一次点击
+  if (list.length === 1 && list[0].kidguard){
+    const only = list[0];
+    $('ip').value = only.ip;
+    try{ localStorage.setItem('kg_ip', only.ip); }catch(e){}
+    const r = await call('scan', {ip:only.ip});
+    toast(r.ok, r.ok ? ('已自动连上 ' + only.ip + '（' + (only.model||'电视') + '）') : (only.ip + ' 连不上'));
+    if (r.ok) hideScan();
+  }
+}
+function hideScan(){ $('scanbox').style.display = 'none'; }
 async function refresh(manual){
   if (manual) log('刷新状态…');
   await call('state', {});

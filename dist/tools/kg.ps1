@@ -79,6 +79,80 @@ function Get-Devices {
   }
   return $list
 }
+
+# ------------------------------- 电视 IP 自动发现（扫本机 /24 网段的 5555）
+# 为什么不靠 adb mdns：实测这台小米盒子的 mDNS 发现是空的（adb mdns services 无输出）。
+# 纯 TCP 并发探测，253 台主机约 1.5 秒扫完。
+function Get-LocalV4 {
+  $out = @()
+  try {
+    $nics = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() |
+      Where-Object { $_.OperationalStatus -eq 'Up' -and $_.NetworkInterfaceType -ne 'Loopback' }
+    foreach($a in $nics){
+      foreach($p in $a.GetIPProperties().UnicastAddresses){
+        if($p.Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork){ continue }
+        $ip = $p.Address.ToString()
+        if($ip -like '127.*' -or $ip -like '169.254.*'){ continue }
+        $out += $ip
+      }
+    }
+  } catch { }
+  return $out
+}
+function Scan-Port5555([int]$timeoutMs = 1500) {
+  $lans = @(Get-LocalV4)
+  if($lans.Count -eq 0){ return @() }
+  $targets = @()
+  foreach($ip in $lans){
+    $o = $ip.Split('.')
+    for($i = 1; $i -le 254; $i++){
+      $t = $o[0] + '.' + $o[1] + '.' + $o[2] + '.' + $i
+      if($lans -notcontains $t){ $targets += $t }
+    }
+  }
+  if($targets.Count -eq 0){ return @() }
+  $n = $targets.Count
+  $tasks = New-Object 'System.Threading.Tasks.Task[]' $n
+  $clients = New-Object 'System.Net.Sockets.TcpClient[]' $n
+  for($i = 0; $i -lt $n; $i++){
+    $c = New-Object System.Net.Sockets.TcpClient
+    $clients[$i] = $c
+    try { $tasks[$i] = $c.ConnectAsync($targets[$i], 5555) } catch { }
+  }
+  try { $null = [System.Threading.Tasks.Task]::WaitAll($tasks, $timeoutMs) } catch { }
+  $open = @()
+  for($i = 0; $i -lt $n; $i++){
+    $c = $clients[$i]
+    $isOpen = $false
+    try { if($c){ $isOpen = $c.Connected } } catch { }
+    if($isOpen){ $open += $targets[$i] }
+    try { if($c){ $c.Close() } } catch { }
+  }
+  return $open
+}
+# 扫描 + 认机型，返回候选（装了 KidGuard 的排最前）
+function Find-TvByScan {
+  $open = @(Scan-Port5555 1500)
+  if($open.Count -eq 0){ return @() }
+  $cands = @()
+  foreach($ip in $open){
+    $serial = $ip + ':5555'
+    $null = AdbRaw @('connect', $serial)
+    Start-Sleep -Milliseconds 250
+    $state = ''
+    foreach($d in (Get-Devices)){ if($d.Id -eq $serial){ $state = $d.State } }
+    if($state -ne 'device'){ continue }
+    $model = (& $script:Adb -s $serial shell getprop ro.product.model 2>&1 | Out-String).Trim()
+    $kg = (& $script:Adb -s $serial shell 'pm path com.kidguard.tv' 2>&1 | Out-String).Trim()
+    $hasKg = ($kg -like '*package:*')
+    $score = 0
+    if($hasKg){ $score += 100 }
+    if($model -match '(?i)tv|box|mitv|mibox|shield|magic'){ $score += 10 }
+    $cands += [pscustomobject]@{ ip = $ip; serial = $serial; model = $model; kidguard = $hasKg; score = $score }
+  }
+  return @($cands | Sort-Object -Property score -Descending)
+}
+
 function Test-Dev {
   $list = Get-Devices
   $me = $list | Where-Object { $_.Id -eq $script:Dev }
@@ -105,6 +179,25 @@ function Connect-Device {
   $list = Get-Devices
   $good = @($list | Where-Object { $_.State -eq 'device' })
   if($good.Count -eq 0){
+    # 先自动扫一遍网段（不依赖 adb mdns：实测这台小米盒子的 mDNS 发现是空的）
+    Step '没有现成设备，正在扫描本机网段里的 5555 端口…'
+    $cands = @(Find-TvByScan)
+    if($cands.Count -ge 1){
+      for($i=0; $i -lt $cands.Count; $i++){
+        $tag = ''
+        if($cands[$i].kidguard){ $tag = '  ← 已装 KidGuard' }
+        Info ("[$i] " + $cands[$i].ip + "  " + $cands[$i].model + $tag)
+      }
+      $pick = 0
+      if($cands.Count -gt 1){
+        $sel = Read-Host '输入要用的序号（直接回车 = 第一个）'
+        if($sel.Trim() -ne '' -and -not [int]::TryParse($sel, [ref]$pick)){ $pick = 0 }
+        if($pick -lt 0 -or $pick -ge $cands.Count){ $pick = 0 }
+      }
+      $script:Dev = $cands[$pick].serial
+      Ok ("自动找到设备 " + $script:Dev)
+      return (Test-Dev)
+    }
     Bad '没有检测到可用的电视设备。'
     Info '请检查：① 电视 设置→关于 连按版本号 打开开发者选项'
     Info '        ② 开发者选项 / 账号与安全 里打开「ADB调试 · 网络调试」'
