@@ -120,8 +120,9 @@ public class CommandReceiver extends BroadcastReceiver {
             return "可用命令: ping status apps dump owner acc sync conf conf-set setpin limit add step dirmin coversec reset free "
                  + "lock unlock start suspend resume release guard-on guard-off enforce-on enforce-off "
                  + "blpkg-add blpkg-del blkw-add blkw-del bltitle-add bltitle-del "
+                 + "whkw-add whkw-del whtitle-add whtitle-del "
                  + "blwatch-on blwatch-off wl-add wl-del bl-on bl-off hardlock targets test-blk a11y-dump verbose "
-                 + "strictprev-on strictprev-off cover-now allow-clear shot";
+                 + "strictprev-on strictprev-off cover-now allow allow-clear shot";
         }
         if ("status".equals(cmd) || "get".equals(cmd)) return status(c);
         if ("apps".equals(cmd)) return Admin.appList(c);
@@ -215,9 +216,9 @@ public class CommandReceiver extends BroadcastReceiver {
         if ("free".equals(cmd)) {
             boolean on = !("0".equals(val) || "false".equalsIgnoreCase(val));
             Prefs.setFreeToday(c, on);
-            if (on) Prefs.setForceLock(c, false);
+            if (on) { Prefs.setForceLock(c, false); GuardAccessibilityService.endCover(); }
             GuardService.start(c);
-            return "OK freeToday=" + on;
+            return "OK freeToday=" + on + (on ? "（今天全开锁：时间不限，APP 黑名单也直接放行）" : "");
         }
         if ("lock".equals(cmd)) {
             Prefs.setForceLock(c, true);
@@ -228,6 +229,7 @@ public class CommandReceiver extends BroadcastReceiver {
         if ("unlock".equals(cmd)) {
             Prefs.setForceLock(c, false);
             Admin.unsuspendAll(c);
+            GuardAccessibilityService.endCover();
             GuardService.start(c);
             return "OK 已解除强制锁定";
         }
@@ -274,9 +276,10 @@ public class CommandReceiver extends BroadcastReceiver {
             return "wouldSuspend=" + Prefs.join(Admin.suspendTargets(c));
         }
         if (cmd != null && cmd.startsWith("blpkg-")) {
-            String key = "blPackages";
-            if (cmd.endsWith("-add")) { Prefs.addList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.blPackages(c)); }
-            if (cmd.endsWith("-del")) { Prefs.delList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.blPackages(c)); }
+            // APP 黑名单 = 打开要家长 PIN（旧命令名 blpkg-* 保留，落到 appBlack）
+            String key = "appBlack";
+            if (cmd.endsWith("-add")) { Prefs.addList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.appBlack(c)); }
+            if (cmd.endsWith("-del")) { Prefs.delList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.appBlack(c)); }
         }
         if (cmd != null && cmd.startsWith("blkw-")) {
             String key = "blKeywords";
@@ -288,6 +291,16 @@ public class CommandReceiver extends BroadcastReceiver {
             if (cmd.endsWith("-add")) { Prefs.addList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.blTitles(c)); }
             if (cmd.endsWith("-del")) { Prefs.delList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.blTitles(c)); }
         }
+        if (cmd != null && cmd.startsWith("whkw-")) {
+            String key = "whKeywords";
+            if (cmd.endsWith("-add")) { Prefs.addList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.whKeywords(c)); }
+            if (cmd.endsWith("-del")) { Prefs.delList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.whKeywords(c)); }
+        }
+        if (cmd != null && cmd.startsWith("whtitle-")) {
+            String key = "whTitles";
+            if (cmd.endsWith("-add")) { Prefs.addList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.whTitles(c)); }
+            if (cmd.endsWith("-del")) { Prefs.delList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.whTitles(c)); }
+        }
         if ("blwatch-on".equals(cmd) || "blwatch-off".equals(cmd)) {
             Prefs.setBlPlayBlock(c, "blwatch-on".equals(cmd));
             return "OK blPlayBlock=" + Prefs.blPlayBlock(c);
@@ -298,9 +311,10 @@ public class CommandReceiver extends BroadcastReceiver {
                     + "（开＝读不到片名也切：只要没按确定、有画面、在出声就当成自动预览切掉）";
         }
         if (cmd != null && cmd.startsWith("wl-")) {
-            String key = "whitelist";
-            if (cmd.endsWith("-add")) { Prefs.addList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.whitelist(c)); }
-            if (cmd.endsWith("-del")) { Prefs.delList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.whitelist(c)); }
+            // APP 白名单 = 唯一的内容过滤豁免（旧命令名 wl-* 保留，落到 appWhite）
+            String key = "appWhite";
+            if (cmd.endsWith("-add")) { Prefs.addList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.appWhite(c)); }
+            if (cmd.endsWith("-del")) { Prefs.delList(c, key, val); return "OK " + key + "=" + Prefs.join(Prefs.appWhite(c)); }
         }
         if ("a11y-dump".equals(cmd)) {
             GuardAccessibilityService.DUMP_TREE = true;
@@ -309,6 +323,14 @@ public class CommandReceiver extends BroadcastReceiver {
         if ("cover-now".equals(cmd)) {
             // 手工测试「已屏蔽」遮罩：对当前前台 App 立刻盖 10 秒，看 logcat 的 COVER 行
             return GuardAccessibilityService.testCover();
+        }
+        if ("allow".equals(cmd)) {
+            // 电脑端「本次放行」：给某个 APP 黑名单里的应用开锁 30 分钟（内容过滤与时长限制照常）
+            if (val == null || val.length() == 0) return "FAIL: 需要 --es val <包名>";
+            long until = System.currentTimeMillis() + GuardAccessibilityService.ALLOW_MS;
+            Prefs.setAllowUntil(c, val, until);
+            GuardAccessibilityService.endCover();
+            return "OK 已放行 " + val + " " + (GuardAccessibilityService.ALLOW_MS / 60000) + " 分钟（到期自动恢复要 PIN）；当前放行=" + allowList(c);
         }
         if ("allow-clear".equals(cmd)) {
             // 不给包名 = 清掉所有临时放行
@@ -367,8 +389,10 @@ public class CommandReceiver extends BroadcastReceiver {
         sb.append("DeviceAdmin     ").append(Admin.isAdmin(c)).append('\n');
         sb.append("无障碍已启用    ").append(accEnabled(c)).append('\n');
         sb.append("上次挂起结果    ").append(Prefs.sp(c).getString("lastLockErr", "")).append('\n');
-        sb.append("黑名单关键字    ").append(Prefs.join(Prefs.blKeywords(c))).append('\n');
-        sb.append("黑名单片名      ").append(Prefs.join(Prefs.blTitles(c))).append('\n');
+        sb.append("内容黑名单关键字    ").append(Prefs.join(Prefs.blKeywords(c))).append('\n');
+        sb.append("内容黑名单片名      ").append(Prefs.join(Prefs.blTitles(c))).append('\n');
+        sb.append("内容白名单关键字    ").append(Prefs.join(Prefs.whKeywords(c))).append('\n');
+        sb.append("内容白名单片名      ").append(Prefs.join(Prefs.whTitles(c))).append('\n');
         sb.append("播放页兜底      ").append(Prefs.blPlayBlock(c)).append('\n');
         sb.append("预览严格模式    ").append(Prefs.strictPreview(c))
           .append(Prefs.strictPreview(c) ? "（读不到片名也切：没按确定 + 有画面 + 在出声 = 自动预览）" : "").append('\n');
@@ -376,9 +400,9 @@ public class CommandReceiver extends BroadcastReceiver {
           .append(Prefs.dirMinMs(c) > 0 ? "（同一方向键这个时间内连发只走一格）" : "（已关闭，恢复系统原样）").append('\n');
         sb.append("黑名单遮罩      ").append(Prefs.coverSec(c)).append(" 秒（命中后遥控器按不动这么久，1~10 家长可调）").append('\n');
         sb.append("诊断日志        ").append(Prefs.verbose(c) ? "verbose 开（高频日志，排查用）" : "verbose 关").append('\n');
-        sb.append("黑名单应用      ").append(Prefs.join(Prefs.blPackages(c))).append('\n');
+        sb.append("APP黑名单       ").append(Prefs.join(Prefs.appBlack(c))).append("（打开要家长 PIN）").append('\n');
         sb.append("家长临时放行    ").append(allowList(c)).append('\n');
-        sb.append("白名单          ").append(Prefs.join(Prefs.whitelist(c))).append('\n');
+        sb.append("APP白名单       ").append(Prefs.join(Prefs.appWhite(c))).append("（不过滤内容，时间限制照常）").append('\n');
         sb.append("已挂起列表      ").append(Prefs.sp(c).getString("suspended", "")).append('\n');
         sb.append("grants          ").append(Prefs.sp(c).getString("grants", "{}")).append('\n');
         return sb.toString();

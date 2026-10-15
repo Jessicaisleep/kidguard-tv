@@ -201,15 +201,20 @@ public final class Admin {
         return Build.VERSION.SDK_INT >= 24;
     }
 
-    /** 计算"锁定时要挂起"的应用集合：黑名单 +（强锁模式下）所有可启动的应用；排除本包与白名单。 */
+    /**
+     * 计算"锁定时要挂起"的应用集合：APP 黑名单 +（强锁模式下）所有可启动的应用；只排除本包。
+     *
+     * 注意（2026-10-16 新规则）：**APP 白名单不在这里豁免**。
+     * APP 白名单只豁免「内容过滤」（关键字/片名），每日时长限制对它照常生效，
+     * 所以时间到了它同样要被挂起 —— 否则夸克就能在锁定时继续看。
+     */
     public static List<String> suspendTargets(Context c) {
         List<String> out = new ArrayList<String>();
         String self = c.getPackageName();
         PackageManager pm = c.getPackageManager();
-        List<String> wl = Prefs.whitelist(c);
 
-        List<String> bl = Prefs.blPackages(c);
-        for (int i = 0; i < bl.size(); i++) addT(out, pm, bl.get(i), self, wl);
+        List<String> bl = Prefs.appBlack(c);
+        for (int i = 0; i < bl.size(); i++) addT(out, pm, bl.get(i), self);
 
         if (Prefs.hardLock(c)) {
             try {
@@ -219,13 +224,13 @@ public final class Admin {
                 for (int i = 0; i < ris.size(); i++) {
                     android.content.pm.ResolveInfo ri = ris.get(i);
                     if (ri.activityInfo == null) continue;
-                    addT(out, pm, ri.activityInfo.packageName, self, wl);
+                    addT(out, pm, ri.activityInfo.packageName, self);
                 }
                 Intent s = new Intent(android.provider.Settings.ACTION_SETTINGS);
                 List<android.content.pm.ResolveInfo> sris = pm.queryIntentActivities(s, 0);
                 for (int i = 0; i < sris.size(); i++) {
                     if (sris.get(i).activityInfo == null) continue;
-                    addT(out, pm, sris.get(i).activityInfo.packageName, self, wl);
+                    addT(out, pm, sris.get(i).activityInfo.packageName, self);
                 }
             } catch (Throwable t) {
                 Log.w("suspendTargets query fail: " + t);
@@ -234,11 +239,10 @@ public final class Admin {
         return out;
     }
 
-    private static void addT(List<String> out, PackageManager pm, String pkg, String self, List<String> wl) {
+    private static void addT(List<String> out, PackageManager pm, String pkg, String self) {
         if (pkg == null || pkg.length() == 0) return;
         if (pkg.equals(self)) return;
         if (pkg.equals("android")) return;
-        if (wl.contains(pkg)) return;
         if (out.contains(pkg)) return;
         try { pm.getPackageInfo(pkg, 0); out.add(pkg); } catch (Throwable ignored) { }
     }

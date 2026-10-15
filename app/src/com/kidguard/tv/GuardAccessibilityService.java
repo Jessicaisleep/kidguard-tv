@@ -215,9 +215,13 @@ public class GuardAccessibilityService extends AccessibilityService {
             w.post(new Runnable() {
                 @Override public void run() {
                     try {
-                        if (guardActive() && audioActive()) {
+                        if (guardActive()) {
                             String p = activePkg();
-                            if (p != null && p.length() > 0 && !p.equals(getPackageName())) watchdog(p);
+                            if (p != null && p.length() > 0 && !p.equals(getPackageName())) {
+                                // APP 门锁优先：命中就盖门锁，这一轮不再做内容巡检
+                                if (checkAppLock(p)) return;
+                                if (audioActive()) watchdog(p);
+                            }
                         }
                     } catch (Throwable t) {
                         Log.w("watchTick: " + t);
@@ -426,7 +430,7 @@ public class GuardAccessibilityService extends AccessibilityService {
         }
         if (now - lastSlowHitAt < SLOW_HIT_MS) return null;
         lastSlowHitAt = now;
-        if (pkg != null && Prefs.isAllowed(this, pkg)) return null;
+        if (pkg != null && Prefs.contentExempt(this, pkg)) return null;
         AccessibilityNodeInfo root = null;
         try { root = getRootInActiveWindow(); } catch (Throwable ignored) { }
         if (root == null) return null;
@@ -481,18 +485,20 @@ public class GuardAccessibilityService extends AccessibilityService {
      */
     private void askParentAllow() {
         String pkg = coverPkg == null ? "" : coverPkg;
-        Log.i("COVER ask-parent pkg=" + pkg);
+        Log.i("COVER ask-parent pkg=" + pkg + " lock=" + lockMode);
         try {
             Intent it = new Intent(this, ParentActivity.class);
             it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
             it.putExtra("need_pin", true);
             it.putExtra("allow_pkg", pkg);
+            // 门锁（APP 黑名单）与内容屏蔽都要家长 PIN，但文案不同：告诉家长界面这一次是哪一种。
+            it.putExtra("lock_mode", lockMode);
             startActivity(it);
         } catch (Throwable t) {
             Log.w("ask parent fail: " + t);
         }
         // 家长输 PIN 的这段时间继续挡着；输完（或取消）由 ParentActivity 调 endCover()
-        coverUntil = System.currentTimeMillis() + 120000L;
+        if (!lockMode) coverUntil = System.currentTimeMillis() + 120000L;
         if (coverLeft != null) coverLeft.setText("请家长输入 PIN…");
     }
 
@@ -613,6 +619,8 @@ public class GuardAccessibilityService extends AccessibilityService {
             if (!guardActive()) {
                 clearFocus();
             } else if (pkg != null && pkg.length() > 0 && !pkg.equals(getPackageName())) {
+                // ① APP 门锁：黑名单里的应用且还没被家长放行 → 盖门锁，这一轮不做内容判定
+                if (checkAppLock(pkg)) return;
                 updateFocus(pkg);
                 // 页面级命中缓存：原来只有「正在出声 + watchdog」才会写它，
                 // 没在播放的详情页就一直是空的 → 吞确定键少一道兜底。这里顺手补上。
@@ -630,10 +638,16 @@ public class GuardAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** 该包是否属于「被读屏监控的播放器」。 */
+    /**
+     * 内容过滤是否作用于该包。
+     *
+     * 新规则（2026-10-16）：内容黑/白名单是**全局规则**，除了「APP 白名单」里的应用
+     * 之外，所有 App 都要过内容过滤。所以这里不再是「名单里的才监控」，而是反过来。
+     */
     private boolean monitored(String pkg) {
-        if (Prefs.whitelistMode(this)) return Prefs.whitelist(this).contains(pkg);
-        return Prefs.blPackages(this).contains(pkg);
+        if (pkg == null || pkg.length() == 0) return false;
+        if (pkg.equals(getPackageName())) return false;
+        return !Prefs.contentExempt(this, pkg);
     }
 
     /**
@@ -890,8 +904,6 @@ public class GuardAccessibilityService extends AccessibilityService {
 
     private void watchdog(String pkg) {
         if (!monitored(pkg)) return;
-        // 家长刚用 PIN 放行过这个 App（默认 30 分钟）→ 完全不管它
-        if (Prefs.isAllowed(this, pkg)) return;
         // 正在遮罩里 → 什么都不用做（10 秒后自己会放开，然后再判一次）
         if (covering()) return;
         // 家长界面 / PIN 键盘在前面时不要动画面（家长正在操作，别拿黑幕去盖他）
@@ -1002,12 +1014,97 @@ public class GuardAccessibilityService extends AccessibilityService {
         return System.currentTimeMillis() < coverUntil;
     }
 
+    // ---------------- APP 门锁（APP 黑名单 = 打开要家长 PIN） ----------------
+    //
+    // 用户定稿（2026-10-16）：「APP 黑名单的作用是：给 APP 加上家长锁。」
+    //   · 打开这些 App 必须家长在电视上输 PIN，或在电脑控制台点「本次放行 / 今日放行」；
+    //   · 家长放行**只开锁**，每日时长限制与内容过滤照常生效（所以放行不豁免 watchdog）；
+    //   · 没放行时挡住整个界面：复用「已屏蔽」那层 overlay + 同样的按键吞没逻辑，
+    //     区别只在文案与「不会自动倒计时放开」（coverUntil 顶到很大，靠 endCover() 撤）。
+    // 检测点有两处：无障碍窗口事件（切前台立刻反应）和 3 秒定时巡检（兜底）。
+
+    /** 门锁模式下：这张遮罩不是「内容被屏蔽」，而是「这个 App 要家长 PIN」。 */
+    private volatile boolean lockMode = false;
+    /** 门锁锁住的包名（家长输对 PIN 后由 ParentActivity 调 endCover 撤掉）。 */
+    private volatile String lockPkg = null;
+    /** 门锁检测节流（无障碍事件很密，别每次都去读配置）。 */
+    private volatile long lastLockCheck = 0L;
+
+    /**
+     * 若前台 App 属于「APP 黑名单且还没放行」，盖一层要 PIN 的门锁。
+     * 返回值 = 现在是否处于门锁状态（调用方据此决定要不要继续做内容判定）。
+     */
+    private boolean checkAppLock(String pkg) {
+        // 已经锁着：如果前台换了包（孩子按 HOME 回桌面、或切到别的 App），
+        // 说明被锁的那个 App 已经不在前台 —— 必须立刻撤锁，否则黑幕会跟着一路盖到桌面上，
+        // 而且 lockMode 会把后面的判定全部短路（真机 bug：回桌面后黑幕不消失）。
+        if (lockMode) {
+            if (pkg != null && pkg.equals(lockPkg)) return true;
+            uncuffLock("前台已切走");
+            return false;
+        }
+        if (pkg == null || pkg.length() == 0) return false;
+        if (!guardActive()) return false;
+        if (GuardService.parentBusy()) return false;
+        long now = System.currentTimeMillis();
+        if (now - lastLockCheck < 400L) return false;
+        lastLockCheck = now;
+        try {
+            if (!Prefs.appLocked(this, pkg)) return false;
+        } catch (Throwable t) {
+            return false;
+        }
+        lockMode = true;
+        lockPkg = pkg;
+        coverPkg = pkg;
+        coverWhy = appLabel(pkg);
+        coverUntil = Long.MAX_VALUE;   // 门锁不自动放开，只能靠家长 PIN / 电脑放行
+        Log.i("APPLOCK on pkg=" + pkg + " label=" + coverWhy);
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            showCover();
+        } else {
+            try {
+                main.post(new Runnable() { @Override public void run() { showCover(); } });
+            } catch (Throwable t) {
+                Log.w("applock post: " + t);
+            }
+        }
+        return true;
+    }
+
+    /** 撤掉门锁态（不碰家长放行记录），把黑幕收起来。 */
+    private void uncuffLock(String why) {
+        Log.i("APPLOCK auto-clear (" + why + ") pkg=" + lockPkg);
+        lockMode = false;
+        lockPkg = null;
+        coverUntil = 0L;
+        lastLockCheck = 0L;
+        try {
+            main.post(new Runnable() {
+                @Override public void run() { hideCover(); }
+            });
+        } catch (Throwable ignored) { }
+    }
+
+    /** 取应用的中文名（拿不到就返回包名）。 */
+    private String appLabel(String pkg) {
+        try {
+            android.content.pm.PackageManager pm = getPackageManager();
+            android.content.pm.ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            CharSequence c = pm.getApplicationLabel(ai);
+            if (c != null && c.length() > 0) return c.toString();
+        } catch (Throwable ignored) { }
+        return pkg;
+    }
+
     /**
      * 盖一层「已屏蔽」：黑幕 + 词条名 + 倒计时 + 「家长按【菜单键】输 PIN 可允许播放」。
      * 不退出 App、不按返回、不记违规、不累计；时长由家长端决定（{@link Prefs#coverSec}，1~10 秒）后自动放开。
      */
     private void cover(String pkg, String hit, String kind) {
         long ms = coverMs();
+        lockMode = false;
+        lockPkg = null;
         lastBlock = System.currentTimeMillis();
         coverUntil = System.currentTimeMillis() + ms;
         coverPkg = pkg;
@@ -1026,16 +1123,58 @@ public class GuardAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** 家长放行后立刻撤掉遮罩（ParentActivity 输对 PIN 时调用）。 */
+    /** 家长放行后立刻撤掉遮罩（ParentActivity 输对 PIN 时 / 电脑控制台放行后调用）。 */
     public static void endCover() {
         final GuardAccessibilityService s = I;
         if (s == null) return;
+        boolean wasLock = s.lockMode;
         s.coverUntil = 0L;
+        s.lockMode = false;
+        s.lockPkg = null;
+        if (wasLock) {
+            Log.i("APPLOCK off");
+            // 放行只开锁：马上去判一次内容过滤，别让「刚开锁 App 就在放黑名单片」溜过去。
+            s.lastLockCheck = 0L;
+        }
         try {
             s.main.post(new Runnable() {
                 @Override public void run() {
                     s.hideCover();
                 }
+            });
+        } catch (Throwable ignored) { }
+    }
+
+    /**
+     * 家长界面进入前台：
+     * · 门锁生效时 —— 只把黑幕暂时收起来，**锁保留**（家长输完 PIN / 退出后还要挡回来）；
+     * · 普通内容遮罩 —— 直接撤掉（家长正在操作，别盖着他）。
+     */
+    public static void parentOpened() {
+        final GuardAccessibilityService s = I;
+        if (s == null) return;
+        if (!s.lockMode) { endCover(); return; }
+        Log.i("APPLOCK overlay hidden (parent in front, lock kept)");
+        try {
+            s.main.post(new Runnable() {
+                @Override public void run() { s.hideCover(); }
+            });
+        } catch (Throwable ignored) { }
+    }
+
+    /**
+     * 家长界面离开前台：门锁还生效就把黑幕盖回来，
+     * 堵住「按菜单键 → 再按返回 → 有 1~3 秒没人挡」的窗口。
+     */
+    public static void parentClosed() {
+        final GuardAccessibilityService s = I;
+        if (s == null) return;
+        if (!s.lockMode) return;
+        s.lastLockCheck = 0L;
+        Log.i("APPLOCK overlay restored (parent gone)");
+        try {
+            s.main.post(new Runnable() {
+                @Override public void run() { s.showCover(); }
             });
         } catch (Throwable ignored) { }
     }
@@ -1056,13 +1195,13 @@ public class GuardAccessibilityService extends AccessibilityService {
             col.setGravity(Gravity.CENTER_HORIZONTAL);
 
             TextView t1 = new TextView(this);
-            t1.setText("这个先不能看");
+            t1.setText(lockMode ? "这个要家长开锁" : "这个先不能看");
             t1.setTextSize(TypedValue.COMPLEX_UNIT_SP, 46);
             t1.setTextColor(0xFFFF5252);
             t1.setGravity(Gravity.CENTER);
 
             TextView t2 = new TextView(this);
-            t2.setText("「" + coverWhy + "」已屏蔽");
+            t2.setText(lockMode ? ("「" + coverWhy + "」要家长 PIN") : ("「" + coverWhy + "」已屏蔽"));
             t2.setTextSize(TypedValue.COMPLEX_UNIT_SP, 30);
             t2.setTextColor(0xFFECEFF1);
             t2.setGravity(Gravity.CENTER);
@@ -1075,7 +1214,9 @@ public class GuardAccessibilityService extends AccessibilityService {
             coverLeft.setPadding(0, dpS(10), 0, 0);
 
             TextView t4 = new TextView(this);
-            t4.setText("家长：按【菜单键】输入 PIN 可以允许播放");
+            t4.setText(lockMode
+                    ? "家长：按【菜单键】输入 PIN 开锁（也可在电脑控制台放行）"
+                    : "家长：按【菜单键】输入 PIN 可以允许播放");
             t4.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
             t4.setTextColor(0xFF4FC3F7);
             t4.setGravity(Gravity.CENTER);
@@ -1118,9 +1259,13 @@ public class GuardAccessibilityService extends AccessibilityService {
         }
     }
 
-    /** 每 500ms 刷一次遮罩上的倒计时；到点自己收掉。 */
+    /** 每 500ms 刷一次遮罩上的倒计时；到点自己收掉。门锁模式不倒计时（只能家长撤）。 */
     private final Runnable coverTick = new Runnable() {
         @Override public void run() {
+            if (lockMode) {
+                if (coverLeft != null) coverLeft.setText("等家长输入 PIN 开锁");
+                return;   // 门锁不自动放开
+            }
             long left = coverUntil - System.currentTimeMillis();
             if (left <= 0L) {
                 Log.i("COVER off pkg=" + coverPkg + " hit=" + coverWhy);

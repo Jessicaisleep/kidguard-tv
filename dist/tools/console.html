@@ -131,7 +131,7 @@
   <!-- 名单 -->
   <section class="pane" id="p2">
     <div class="card">
-      <h2>黑名单关键字 <span class="hint">模糊匹配：页面上出现这几个字就拦（用专名，别用「游戏/动画」这类通用词）</span></h2>
+      <h2>内容黑名单 · 关键字 <span class="hint">模糊匹配：页面上出现这几个字就拦（用专名，别用「游戏/动画」这类通用词）。全局生效，只有「APP 白名单」豁免。</span></h2>
       <div class="chips" id="c-blkw"></div>
       <div class="row">
         <input type="text" id="in-blkw" placeholder="例如 熊出没" style="width:220px">
@@ -142,7 +142,7 @@
     </div>
 
     <div class="card">
-      <h2>黑名单片名 <span class="hint">整名匹配（写完整片名更准）</span></h2>
+      <h2>内容黑名单 · 片名 <span class="hint">整名匹配（写完整片名更准）</span></h2>
       <div class="chips" id="c-bltitle"></div>
       <div class="row">
         <input type="text" id="in-bltitle" placeholder="例如 喜羊羊与灰太狼" style="width:260px">
@@ -151,23 +151,46 @@
     </div>
 
     <div class="card">
-      <h2>黑名单应用 <span class="hint">这些 App 直接拦（锁定时还会被挂起，点不开）</span></h2>
-      <div class="chips" id="c-blpkg"></div>
+      <h2>内容白名单 · 关键字 <span class="hint">命中就不拦，优先级高于内容黑名单（例如「Bluey」「布鲁伊」）</span></h2>
+      <div class="chips" id="c-whkw"></div>
       <div class="row">
-        <select id="in-blpkg" style="min-width:260px"><option value="">点这里从「已装应用」里选…</option></select>
+        <input type="text" id="in-whkw" placeholder="例如 布鲁伊" style="width:220px">
+        <button class="btn pri" onclick="addKw('whkw-add','in-whkw','白名单关键字')">添加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>内容白名单 · 片名 <span class="hint">整名匹配，命中就放行</span></h2>
+      <div class="chips" id="c-whtitle"></div>
+      <div class="row">
+        <input type="text" id="in-whtitle" placeholder="例如 布鲁伊 第一季" style="width:260px">
+        <button class="btn pri" onclick="addKw('whtitle-add','in-whtitle','白名单片名')">添加</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>APP 黑名单 <span class="hint">这些 App 打开要家长 PIN（电脑上点下面「本次放行」可临时开锁）。时长限制与内容过滤照常生效。</span></h2>
+      <div class="chips" id="c-appblk"></div>
+      <div class="row">
+        <select id="in-appblk" style="min-width:260px"><option value="">点这里从「已装应用」里选…</option></select>
         <button class="btn" onclick="loadApps()">刷新列表</button>
-        <button class="btn pri" onclick="addKw('blpkg-add','in-blpkg','应用')">添加</button>
+        <button class="btn pri" onclick="addKw('blpkg-add','in-appblk','APP 黑名单')">添加</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span class="muted">本次放行 30 分钟：</span>
+        <select id="in-allow" style="min-width:260px"><option value="">选一个 App…</option></select>
+        <button class="btn pri" onclick="cmd('allow', valOf('in-allow'), '本次放行')">放行 30 分钟</button>
+        <button class="btn danger" onclick="cmd('allow-clear','','取消全部放行')">取消全部放行</button>
       </div>
       <p class="muted" style="margin:8px 0 0">提示：当贝桌面/系统桌面这类「桌面」应用系统不允许挂起，加进来也不会生效。</p>
     </div>
 
     <div class="card">
-      <h2>白名单 <span class="hint">非空时反转为「只允许白名单里的应用」</span></h2>
-      <div class="chips" id="c-white"></div>
+      <h2>APP 白名单 <span class="hint">这是唯一能让内容黑名单失效的地方：放行所有内容，但每日时长限制照常。适合夸克网盘这类「片子都是自己挑的」App。</span></h2>
+      <div class="chips" id="c-appwht"></div>
       <div class="row">
-        <select id="in-white" style="min-width:260px"><option value="">从「已装应用」里选…</option></select>
-        <button class="btn pri" onclick="addKw('wl-add','in-white','白名单')">添加</button>
-        <button class="btn danger" onclick="cmd('wl-del','__ALL__','清空白名单')">清空（撤销白名单模式）</button>
+        <select id="in-appwht" style="min-width:260px"><option value="">从「已装应用」里选…</option></select>
+        <button class="btn pri" onclick="addKw('wl-add','in-appwht','APP 白名单')">添加</button>
       </div>
     </div>
 
@@ -297,6 +320,8 @@ let appsLoaded = false;
 
 /* ------------------------------------------------------------------ 基础 */
 function $(id){ return document.getElementById(id); }
+/* 下拉框/输入框的当前值（下拉框没选时返回空串） */
+function valOf(id){ const el = $(id); return el ? String(el.value || '').trim() : ''; }
 /* 服务器返回的数组：0 项会变成 null，1 项会变成对象（PowerShell 的 ConvertTo-Json 特性），统一成数组 */
 function arr(x){ if (x === null || x === undefined) return []; return Array.isArray(x) ? x : [x]; }
 function log(msg, cls){
@@ -459,8 +484,9 @@ async function loadApps(){
   const j = await call('apps', {});
   if (!j.ok){ toast(false, j.msg || '读不到应用列表'); return; }
   const list = arr(j.out);
-  ['in-blpkg','in-white'].forEach(id => {
+  ['in-appblk','in-allow','in-appwht'].forEach(id => {
     const sel = $(id);
+    if (!sel) return;
     const keep = sel.value;
     sel.innerHTML = '<option value="">从「已装应用」里选…</option>';
     list.sort((a,b) => (a.kind === b.kind) ? a.name.localeCompare(b.name) : (a.kind === 'usr' ? -1 : 1));
@@ -552,8 +578,10 @@ async function resetEditor(){
     'strict=0',
     'blkw=熊出没,奥特曼,喜羊羊,奶龙',
     'bltitle=',
-    'blpkg=',
-    'white='
+    'whkw=',
+    'whtitle=',
+    'appblk=',
+    'appwht='
   ].join('\n');
 }
 async function loadBackup(name){
@@ -570,7 +598,9 @@ function syncEditorFromState(){
 const CONF_LABEL = {
   limit:'每日上限(分钟)', step:'加时步长(分钟)', guard:'管控总开关', enforce:'应用挂起开关',
   hardlock:'强锁模式', bl:'内容兜底', blplay:'播放页兜底', strict:'预览严格模式',
-  blkw:'黑名单关键字', bltitle:'黑名单片名', blpkg:'黑名单应用', white:'白名单'
+  blkw:'内容黑名单关键字', bltitle:'内容黑名单片名',
+  whkw:'内容白名单关键字', whtitle:'内容白名单片名',
+  appblk:'APP 黑名单(打开要PIN)', appwht:'APP 白名单(不过滤内容)'
 };
 const SWITCHES = [
   {key:'guard',    on:'guard-on',    off:'guard-off',    label:'管控总开关'},
@@ -650,10 +680,12 @@ function renderAll(){
 
   // 名单 chips
   if (S && S.conf){
-    chips('c-blkw',    listOf('blkw'),    'blkw-del', '黑名单关键字');
-    chips('c-bltitle', listOf('bltitle'), 'bltitle-del', '黑名单片名');
-    chips('c-blpkg',   listOf('blpkg'),   'blpkg-del', '黑名单应用');
-    chips('c-white',   listOf('white'),   'wl-del', '白名单');
+    chips('c-blkw',    listOf('blkw'),    'blkw-del', '内容黑名单关键字');
+    chips('c-bltitle', listOf('bltitle'), 'bltitle-del', '内容黑名单片名');
+    chips('c-whkw',    listOf('whkw'),    'whkw-del', '内容白名单关键字');
+    chips('c-whtitle', listOf('whtitle'), 'whtitle-del', '内容白名单片名');
+    chips('c-appblk',  listOf('appblk'),  'blpkg-del', 'APP 黑名单');
+    chips('c-appwht',  listOf('appwht'),  'wl-del', 'APP 白名单');
   }
 
   renderDiff();

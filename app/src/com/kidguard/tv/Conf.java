@@ -39,8 +39,10 @@ public final class Conf {
         sb.append("strict=").append(b(Prefs.strictPreview(c))).append('\n');
         sb.append("blkw=").append(Prefs.join(Prefs.blKeywords(c))).append('\n');
         sb.append("bltitle=").append(Prefs.join(Prefs.blTitles(c))).append('\n');
-        sb.append("blpkg=").append(Prefs.join(Prefs.blPackages(c))).append('\n');
-        sb.append("white=").append(Prefs.join(Prefs.whitelist(c))).append('\n');
+        sb.append("whkw=").append(Prefs.join(Prefs.whKeywords(c))).append('\n');
+        sb.append("whtitle=").append(Prefs.join(Prefs.whTitles(c))).append('\n');
+        sb.append("appblk=").append(Prefs.join(Prefs.appBlack(c))).append('\n');
+        sb.append("appwht=").append(Prefs.join(Prefs.appWhite(c))).append('\n');
         return sb.toString();
     }
 
@@ -90,10 +92,20 @@ public final class Conf {
                     setList(c, "blKeywords", v);
                 } else if ("bltitle".equals(k)) {
                     setList(c, "blTitles", v);
+                } else if ("whkw".equals(k)) {
+                    setList(c, "whKeywords", v);
+                } else if ("whtitle".equals(k)) {
+                    setList(c, "whTitles", v);
+                } else if ("appblk".equals(k)) {
+                    setList(c, "appBlack", v);
+                } else if ("appwht".equals(k)) {
+                    setList(c, "appWhite", v);
                 } else if ("blpkg".equals(k)) {
-                    setList(c, "blPackages", v);
+                    // 旧键（v1 早期版本）：语义是「APP 黑名单」
+                    setList(c, "appBlack", v);
                 } else if ("white".equals(k)) {
-                    setList(c, "whitelist", v);
+                    // 旧键（v1 早期版本）：语义是「APP 白名单」
+                    setList(c, "appWhite", v);
                 } else {
                     sb.append("忽略未知项：").append(k).append('\n');
                     continue;

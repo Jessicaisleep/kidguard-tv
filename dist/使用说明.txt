@@ -166,8 +166,26 @@
     概览    今天已用多久 / 上限多少 / 锁没锁 / 各个开关是什么状态，一眼看完；
             旁边就是「加时」「今日清零」「立即锁定」「解除锁定」「今天完全放行」。
 
-    名单    黑名单关键字、黑名单片名、黑名单应用（可以把已装应用勾进来）、白名单。
-            支持搜一条、加一条、删一条，也能「清空整张名单」。
+    名单    四张名单，两大两小：
+              【黑名单大类】
+                · 内容黑名单·关键字（模糊匹配：页面上出现这几个字就拦）
+                · 内容黑名单·片名（整名匹配，写全名才拦）
+                     ⇒ 命中就盖「已屏蔽」黑幕，按确定也没反应
+                · APP 黑名单（这些 App **打开要家长 PIN**）
+              【白名单大类】
+                · 内容白名单·关键字 / ·片名（命中就放行，优先级高于内容黑名单）
+                · APP 白名单（**唯一**能让内容过滤失效的地方：放行所有内容，时长限制照常）
+             支持搜一条、加一条、删一条，也能「清空整张名单」。
+
+   「黑名单 / 白名单」到底怎么生效（容易绕，记住三条就行）：
+     1. 内容黑名单是**全局规则**——不管在哪个 App（B站、优酷、夸克网盘…）里
+        出现这些词/片名，都会盖黑幕。不是「只在名单里的 App 才管」。
+     2. 内容白名单命中就放行，优先于内容黑名单（例如把「布鲁伊」加进去，
+        就不会被「动画」这类大范围的关键字误伤）。
+     3. APP 白名单是唯一豁免：进了这张名单的 App，内容过滤完全不看
+        （夸克网盘这类「片子都是自己挑的」App 适合放进来），但每日时长限制照常生效。
+     APP 黑名单不是「过滤内容」，而是「打开要家长 PIN」——家长在电视上按【菜单键】
+     输 PIN，或在电脑控制台点「本次放行」，即可开锁一段时间（默认 30 分钟）。
 
     时间与开关  每日上限、每次加时步长、黑名单遮罩时长、改 PIN，以及「内容兜底」
             「应用挂起」「强锁模式」「播放页兜底」「预览严格模式」这些开关。改完点保存即可。
@@ -237,11 +255,13 @@
      2-查看状态.bat 里会多出一行「时钟」告诉你有没有被拨过。）
   2) 内容是靠「读屏」识别焦点框上的文字，所以词要写得具体一点：
      「熊出没」「汪汪队立大功」识别好；单字「熊」容易误伤，谐音/生僻写法可能漏。
-     两个名单：关键字＝模糊包含（推荐，写短一点），片名＝只拦全名那一部。
-     最终手段是白名单模式（家长设置里可以把黑名单改成白名单）：
-     白名单外的视频应用一律不让用，比逐个拉黑彻底。
-  3) 「拦」的第一种方式是让确定键失灵，不是把应用踢掉：
-     焦点停在黑名单上按确定 = 没反应（不弹窗、不退出），孩子只会以为遥控器失灵。
+     内容黑名单两张表：关键字＝模糊包含（推荐，写短一点），片名＝只拦全名那一部；
+     内容白名单同样两张表，命中就放行、优先于黑名单。
+     想彻底一点就把敏感 App 加进【APP 黑名单】——打开就要家长 PIN。
+  3) 「拦」的两种方式要分清：
+     · 内容命中 → 让确定键失灵 + 盖「已屏蔽」黑幕（不弹窗、不退出），孩子只会以为遥控器失灵；
+     · 打开 APP 黑名单里的应用 → 盖「这个要家长开锁」黑幕，按【菜单键】输 PIN 才能进。
+     APP 白名单里的应用不看内容过滤（夸克网盘这类自己挑片子的适合放进去），时长限制照常。
   4) 「内容兜底」（默认开着）：只要页面或焦点框上真的出现名单里的字，就走这一步——
      它不退出应用，而是盖一层黑幕：
        · 大红字「这个先不能看」+「「<命中的词>」已屏蔽」
@@ -389,10 +409,16 @@
         --es cmd setpin --es pin 1357
   受控命令（需 --es pin）：limit / step / add / reset / free / lock / unlock /
     suspend / resume / bl-on / bl-off / blkw-add / blkw-del / bltitle-add /
-    bltitle-del / blpkg-add / blpkg-del / wl-add / wl-del / blwatch-on /
+    bltitle-del / whkw-add / whkw-del / whtitle-add / whtitle-del /
+    blpkg-add / blpkg-del / wl-add / wl-del / blwatch-on /
     blwatch-off / hardlock / sync / release / strictprev-on / strictprev-off /
     cover-now / allow-clear / conf-set / guard-on / guard-off / enforce-on / enforce-off /
     dirmin / coversec / verbose
+    · blpkg-add / blpkg-del → 【APP 黑名单】：加进去的 App **打开要家长 PIN**
+      （命令名沿用旧名 blpkg，语义已改；不再影响内容过滤）
+    · wl-add / wl-del → 【APP 白名单】：唯一豁免内容过滤的地方，时长限制照常
+    · whkw-add / whkw-del、whtitle-add / whtitle-del → 【内容白名单】关键字 / 片名
+      （命中就放行，优先级高于内容黑名单）
   只读命令（免 PIN）：ping / status / get / apps / dump / owner / acc / targets /
      test-blk / a11y-dump / shot / conf
     · test-blk --es val "熊出没之怪兽计划" → 打印命中哪个名单的哪个词条（不下发任何改动）
@@ -421,8 +447,12 @@
         --es cmd conf-set --es pin 你的PIN
       → 把 config.in.txt 写进电视（要 PIN；未知键会跳过并提示「跳过 N 项」）
     配置行：limit=60 / step=30 / dirmin=300 / coversec=10 / guard=1 / enforce=1 / hardlock=1 / bl=1 / blplay=1 /
-      strict=0 / blkw=a,b,c / bltitle= / blpkg=pkg1,pkg2 / white=
+      strict=0 / blkw=a,b,c / bltitle= / whkw=a,b / whtitle= / appblk=pkg1,pkg2 / appwht=pkg3
       （列表用半角逗号；开关 1=开 0=关；apply 之后会按「管控开关 + 是否已锁定」自动收敛挂起状态）
+      · blkw / bltitle = 内容黑名单关键字 / 片名（全局生效）
+      · whkw / whtitle = 内容白名单关键字 / 片名（命中放行，优先于黑名单）
+      · appblk = APP 黑名单（打开要家长 PIN）；appwht = APP 白名单（豁免内容过滤）
+      · 旧键 blpkg / white 仍可导入，会分别落到 appblk / appwht
   状态文件：/sdcard/kidguard/status.txt
   日志：    /sdcard/kidguard/kidguard.log（异步写；>512KB 自动轮转；高频诊断日志用 verbose 开关）
   卸载：

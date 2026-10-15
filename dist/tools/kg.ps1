@@ -607,8 +607,8 @@ function Do-Unlock {
         $kind = Ask-BlKind
         if($kind){
           $map = Get-StatusMap (Get-StatusText)
-          if($kind -eq 'blkw'){ Say "当前关键字名单：$($map['黑名单关键字'])" Gray }
-          else { Say "当前片名名单：$($map['黑名单片名'])" Gray }
+          if($kind -eq 'blkw'){ Say "当前关键字名单：$($map['内容黑名单关键字'])" Gray }
+          else { Say "当前片名名单：$($map['内容黑名单片名'])" Gray }
           $w = Read-Host '请输入要删除的词条（原样照抄）'
           if($w.Trim().Length -gt 0){
             $r = Kg "$kind-del" $w.Trim() $pin; Ok "$kind-del -> $($r.Data)"

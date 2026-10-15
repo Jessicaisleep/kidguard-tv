@@ -51,6 +51,7 @@ $script:Allowed = @(
   'setpin','limit','add','step','reset','free','lock','unlock','start','suspend','resume','release',
   'guard-on','guard-off','enforce-on','enforce-off','bl-on','bl-off','hardlock','targets',
   'blkw-add','blkw-del','bltitle-add','bltitle-del','blpkg-add','blpkg-del','wl-add','wl-del',
+  'whkw-add','whkw-del','whtitle-add','whtitle-del','allow',
   'blwatch-on','blwatch-off','strictprev-on','strictprev-off','allow-clear','cover-now','test-blk'
 )
 
@@ -392,7 +393,8 @@ function Invoke-Op([string]$op, $a) {
         if ($pin -eq '') { $pin = $null }
         # "__ALL__"：整张名单清空（页面上「清空白名单」按钮用）
         if ($val -eq '__ALL__') {
-          $map = @{ 'wl-del' = 'white'; 'blkw-del' = 'blkw'; 'bltitle-del' = 'bltitle'; 'blpkg-del' = 'blpkg' }
+          $map = @{ 'wl-del' = 'appwht'; 'blkw-del' = 'blkw'; 'bltitle-del' = 'bltitle'; 'blpkg-del' = 'appblk'
+                    'whkw-del' = 'whkw'; 'whtitle-del' = 'whtitle' }
           if (-not $map.ContainsKey($cmd)) { return @{ ok = $false; msg = "不支持批量清除：$cmd" } }
           $st0 = Get-State
           $items = @()

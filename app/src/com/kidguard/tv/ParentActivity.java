@@ -99,8 +99,8 @@ public class ParentActivity extends Activity {
         hb.removeCallbacks(hbTask);
         hb.postDelayed(hbTask, 2000L);
         // 家长界面在前台时把「已屏蔽」黑幕撤掉（家长正在操作，别盖着他）；
-        // 从遮罩里按【菜单键】进来输 PIN 的场景也一样：黑幕撤掉，只剩 PIN 键盘。
-        GuardAccessibilityService.endCover();
+        // 但如果这是「APP 门锁」场景，锁要保留 —— 家长界面一离开就把黑幕盖回来。
+        GuardAccessibilityService.parentOpened();
         refreshStatus();
         restoreFocus();
     }
@@ -110,6 +110,12 @@ public class ParentActivity extends Activity {
         hb.removeCallbacks(hbTask);
         GuardService.setParentForeground(false);
         super.onPause();
+    }
+
+    @Override
+    protected void onStop() {
+        GuardAccessibilityService.parentClosed();
+        super.onStop();
     }
 
     @Override
@@ -230,11 +236,12 @@ public class ParentActivity extends Activity {
 
         // ---- 内容黑名单：关键字名单 + 片名名单 ----
         LinearLayout k = Ui.card(this);
-        k.addView(Ui.tv(this, "③ 内容黑名单（两个名单）", 22, Ui.ACCENT, true));
+        k.addView(Ui.tv(this, "③ 内容黑名单（关键字 + 片名）", 22, Ui.ACCENT, true));
         k.addView(Ui.gap(this, 6));
         k.addView(Ui.tv(this, "怎么拦：焦点框停在动画片上时，按「确定」没反应（不弹窗、也不退出）；"
                 + "万一真播起来了，会盖一层「已屏蔽」（不退出、不记违规、到点自动放开）。"
-                + "两个名单命中任意一个就拦。", 14, Ui.DIM, false));
+                + "两个名单命中任意一个就拦。"
+                + "注意：内容黑名单是全局规则，除「APP 白名单」里的应用外，所有 App 都会过滤。", 14, Ui.DIM, false));
         k.addView(Ui.gap(this, 10));
 
         k.addView(Ui.tv(this, "关键字名单（模糊匹配：填「熊出没」，能拦住「熊出没之怪兽计划」）", 15, Ui.TEXT, true));
@@ -328,9 +335,51 @@ public class ParentActivity extends Activity {
                 + "上面的状态栏里也各有一行。", 13, Ui.DIM, false));
         root.addView(k);
 
-        // ---- 应用黑名单 ----
+        // ---- 内容白名单：命中就不拦（比内容黑名单优先）----
+        LinearLayout w = Ui.card(this);
+        w.addView(Ui.tv(this, "④ 内容白名单（命中就不拦，优先于黑名单）", 22, Ui.ACCENT, true));
+        w.addView(Ui.gap(this, 6));
+        w.addView(Ui.tv(this, "白名单比黑名单优先：同一部片子只要命中白名单，就算也命中关键字/片名名单也不会被拦。"
+                + "适合「黑名单里填了「奥特曼」，但想放开某一部奥特曼」。", 14, Ui.DIM, false));
+        w.addView(Ui.gap(this, 10));
+
+        w.addView(Ui.tv(this, "关键字白名单（模糊匹配）", 15, Ui.TEXT, true));
+        LinearLayout whkwBox = Ui.col(this);
+        whkwBox.setId(1004);
+        w.addView(whkwBox);
+        w.addView(Ui.gap(this, 6));
+        w.addView(buttonRow(new String[]{"加关键字", "清空关键字"}, new Runnable[]{
+                new Runnable() { @Override public void run() { editWord("白名单关键字", "whKeywords"); }},
+                new Runnable() { @Override public void run() {
+                    if (!clearConfirmed("关键字白名单")) return;
+                    Prefs.setList(ParentActivity.this, "whKeywords", new java.util.ArrayList<String>());
+                    done();
+                }}
+        }));
+        w.addView(Ui.gap(this, 12));
+
+        w.addView(Ui.tv(this, "片名白名单（整名匹配）", 15, Ui.TEXT, true));
+        LinearLayout whtitleBox = Ui.col(this);
+        whtitleBox.setId(1005);
+        w.addView(whtitleBox);
+        w.addView(Ui.gap(this, 6));
+        w.addView(buttonRow(new String[]{"加片名", "清空片名"}, new Runnable[]{
+                new Runnable() { @Override public void run() { editWord("白名单片名", "whTitles"); }},
+                new Runnable() { @Override public void run() {
+                    if (!clearConfirmed("片名白名单")) return;
+                    Prefs.setList(ParentActivity.this, "whTitles", new java.util.ArrayList<String>());
+                    done();
+                }}
+        }));
+        root.addView(w);
+
+        // ---- 应用黑名单（打开要家长 PIN）----
         LinearLayout a = Ui.card(this);
-        a.addView(Ui.tv(this, "④ 应用黑名单（被读屏监控的播放器）", 22, Ui.ACCENT, true));
+        a.addView(Ui.tv(this, "⑤ 应用黑名单（打开要家长 PIN）", 22, Ui.ACCENT, true));
+        a.addView(Ui.gap(this, 6));
+        a.addView(Ui.tv(this, "作用＝给这些 App 加一把家长锁：孩子点开就盖一层「这个要家长开锁」，"
+                + "要家长在电视上输 PIN，或在电脑控制台点「本次放行 / 今日放行」才能进。"
+                + "放行只开锁：这些 App 的每日时长限制和内容过滤照常生效。", 14, Ui.DIM, false));
         a.addView(Ui.gap(this, 8));
         LinearLayout appBox = Ui.col(this);
         appBox.setId(1002);
@@ -344,9 +393,28 @@ public class ParentActivity extends Activity {
         }));
         root.addView(a);
 
+        // ---- 应用白名单（不过滤内容，时间照常）----
+        LinearLayout aw = Ui.card(this);
+        aw.addView(Ui.tv(this, "⑥ 应用白名单（不过滤内容，时间限制照常）", 22, Ui.ACCENT, true));
+        aw.addView(Ui.gap(this, 6));
+        aw.addView(Ui.tv(this, "这是唯一能让内容黑名单失效的地方：加进来的 App 不再看关键字/片名，"
+                + "但每日时长限制、锁定时挂起照旧。适合「夸克网盘里的片子都是自己挑的」这类场景。", 14, Ui.DIM, false));
+        aw.addView(Ui.gap(this, 8));
+        LinearLayout appWhiteBox = Ui.col(this);
+        appWhiteBox.setId(1006);
+        aw.addView(appWhiteBox);
+        aw.addView(Ui.gap(this, 8));
+        aw.addView(buttonRow(new String[]{"从已装应用添加", "查看当前列表"}, new Runnable[]{
+                new Runnable() { @Override public void run() { pickAppWhite(); }},
+                new Runnable() { @Override public void run() {
+                    Ui.toast(ParentActivity.this, "已在下方显示");
+                }}
+        }));
+        root.addView(aw);
+
         // ---- 系统 ----
         LinearLayout s = Ui.card(this);
-        s.addView(Ui.tv(this, "⑤ 系统状态与修复", 22, Ui.ACCENT, true));
+        s.addView(Ui.tv(this, "⑦ 系统状态与修复", 22, Ui.ACCENT, true));
         s.addView(Ui.gap(this, 8));
         s.addView(buttonRow(new String[]{"无障碍设置", "重新应用管控策略", "暂停管控", "恢复管控", "返回桌面"}, new Runnable[]{
                 new Runnable() { @Override public void run() {
@@ -404,7 +472,10 @@ public class ParentActivity extends Activity {
         refreshStatus();
         listKeywords();
         listTitles();
+        listWhKeywords();
+        listWhTitles();
         listApps();
+        listAppsWhite();
         restoreFocus();
     }
 
@@ -427,24 +498,33 @@ public class ParentActivity extends Activity {
     }
 
     /**
-     * 「已屏蔽」遮罩里家长按了【菜单键】→ 走这条路：验 PIN，对了就允许这个 App 播放 30 分钟。
-     * 这是孩子看到遮罩后唯一的出口，所以必须验 PIN；取消 = 不放行（继续挡）。
+     * 家长从「已屏蔽」遮罩或「APP 门锁」里按了【菜单键】→ 走这条路：验 PIN。
+     * 输对了：内容遮罩场景放行该 App 30 分钟；APP 门锁场景就是开锁（也只开锁，不过滤照常）。
+     * 取消 = 不放行。
      */
     private void askAllowPin() {
         if (tpad != null) return;
-        tpad = Ui.textPadOverlay(this, "家长 PIN（输对后允许播放 30 分钟）",
+        boolean lock = false;
+        try { lock = getIntent() != null && getIntent().getBooleanExtra("lock_mode", false); } catch (Throwable ignored) { }
+        final boolean isLock = lock;
+        tpad = Ui.textPadOverlay(this, isLock ? "家长 PIN（输对后开锁）" : "家长 PIN（输对后允许播放 30 分钟）",
                 new String[]{}, false, new Ui.TextPadCb() {
             @Override public void onText(String s) {
                 tpad = null;
+                boolean unlocked = false;
                 try {
                     if (Prefs.checkPin(ParentActivity.this, s)) {
                         if (allowPkg != null && allowPkg.length() > 0) {
                             Prefs.setAllowUntil(ParentActivity.this, allowPkg,
                                     System.currentTimeMillis() + GuardAccessibilityService.ALLOW_MS);
-                            Ui.toast(ParentActivity.this, "已允许播放 30 分钟（到期后自动恢复拦截）");
-                            Log.i("ALLOW pkg=" + allowPkg + " 30min");
+                            unlocked = true;
+                            Ui.toast(ParentActivity.this, isLock
+                                    ? "已开锁 30 分钟（时间限制与内容过滤照常生效）"
+                                    : "已允许播放 30 分钟（到期后自动恢复拦截）");
+                            Log.i("ALLOW pkg=" + allowPkg + " 30min lock=" + isLock);
                         } else {
                             Ui.toast(ParentActivity.this, "PIN 正确（没有指定要放行的应用）");
+                            unlocked = true;
                         }
                     } else {
                         Ui.toast(ParentActivity.this, "PIN 不对");
@@ -452,12 +532,14 @@ public class ParentActivity extends Activity {
                 } catch (Throwable t) {
                     Log.w("allow pin: " + t);
                 }
-                GuardAccessibilityService.endCover();
+                // 门锁场景下只有在真开锁时才撤锁；没输对就保持锁定（离开界面时黑幕会盖回来）。
+                if (!isLock || unlocked) GuardAccessibilityService.endCover();
                 finish();
             }
             @Override public void onCancel() {
                 tpad = null;
-                GuardAccessibilityService.endCover();
+                // 门锁场景：取消 = 不开锁，锁保留，靠 onStop 的 parentClosed() 把黑幕盖回来。
+                if (!isLock) GuardAccessibilityService.endCover();
                 finish();
             }
         });
@@ -591,30 +673,6 @@ public class ParentActivity extends Activity {
         done();
     }
 
-    private void listTitles() {
-        LinearLayout box = (LinearLayout) root.findViewById(1003);
-        if (box == null) return;
-        box.removeAllViews();
-        List<String> kw = Prefs.blTitles(this);
-        LinearLayout line = null;
-        for (int i = 0; i < kw.size(); i++) {
-            final String k = kw.get(i);
-            if (i % 4 == 0) { line = Ui.row(this); line.setLayoutParams(Ui.mwrap()); box.addView(line); }
-            Button b = Ui.ghostBtn(this, k + " ✕");
-            b.setOnClickListener(new View.OnClickListener() {
-                @Override public void onClick(View v) {
-                    if (!clearConfirmed("片名「" + k + "」")) return;
-                    Prefs.delList(ParentActivity.this, "blTitles", k); done();
-                }
-            });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(Ui.dp(this, 4), Ui.dp(this, 4), Ui.dp(this, 4), Ui.dp(this, 4));
-            b.setLayoutParams(lp);
-            if (line != null) line.addView(b);
-        }
-        if (kw.isEmpty()) box.addView(Ui.tv(this, "（空）", 14, Ui.DIM, false));
-    }
-
     private void refreshStatus() {
         if (statusText == null) return;
         StringBuilder sb = new StringBuilder();
@@ -664,19 +722,36 @@ public class ParentActivity extends Activity {
     }
 
     private void listKeywords() {
-        LinearLayout box = (LinearLayout) root.findViewById(1001);
+        listWords(1001, Prefs.blKeywords(this), "blKeywords", "关键字");
+    }
+
+    private void listTitles() {
+        listWords(1003, Prefs.blTitles(this), "blTitles", "片名");
+    }
+
+    private void listWhKeywords() {
+        listWords(1004, Prefs.whKeywords(this), "whKeywords", "白名单关键字");
+    }
+
+    private void listWhTitles() {
+        listWords(1005, Prefs.whTitles(this), "whTitles", "白名单片名");
+    }
+
+    /** 四个内容名单共用一套渲染（box id / 数据 / 存储键 / 提示名）。 */
+    private void listWords(int boxId, List<String> words, final String key, String what) {
+        LinearLayout box = (LinearLayout) root.findViewById(boxId);
         if (box == null) return;
         box.removeAllViews();
-        List<String> kw = Prefs.blKeywords(this);
         LinearLayout line = null;
-        for (int i = 0; i < kw.size(); i++) {
-            final String k = kw.get(i);
+        for (int i = 0; i < words.size(); i++) {
+            final String k = words.get(i);
             if (i % 5 == 0) { line = Ui.row(this); line.setLayoutParams(Ui.mwrap()); box.addView(line); }
             Button b = Ui.ghostBtn(this, k + " ✕");
+            final String label = what;
             b.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
-                    if (!clearConfirmed("关键字「" + k + "」")) return;
-                    Prefs.delList(ParentActivity.this, "blKeywords", k); done();
+                    if (!clearConfirmed(label + "「" + k + "」")) return;
+                    Prefs.delList(ParentActivity.this, key, k); done();
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -684,14 +759,22 @@ public class ParentActivity extends Activity {
             b.setLayoutParams(lp);
             if (line != null) line.addView(b);
         }
-        if (kw.isEmpty()) box.addView(Ui.tv(this, "（空）", 14, Ui.DIM, false));
+        if (words.isEmpty()) box.addView(Ui.tv(this, "（空）", 14, Ui.DIM, false));
     }
 
     private void listApps() {
-        LinearLayout box = (LinearLayout) root.findViewById(1002);
+        listAppNames(1002, Prefs.appBlack(this), "appBlack");
+    }
+
+    private void listAppsWhite() {
+        listAppNames(1006, Prefs.appWhite(this), "appWhite");
+    }
+
+    /** APP 黑/白名单共用渲染：显示应用中文名，点一下移出。 */
+    private void listAppNames(int boxId, List<String> pk, final String key) {
+        LinearLayout box = (LinearLayout) root.findViewById(boxId);
         if (box == null) return;
         box.removeAllViews();
-        List<String> pk = Prefs.blPackages(this);
         LinearLayout line = null;
         for (int i = 0; i < pk.size(); i++) {
             final String k = pk.get(i);
@@ -705,7 +788,7 @@ public class ParentActivity extends Activity {
             b.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     if (!clearConfirmed("应用「" + lbl + "」")) return;
-                    Prefs.delList(ParentActivity.this, "blPackages", k); done();
+                    Prefs.delList(ParentActivity.this, key, k); done();
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -717,11 +800,25 @@ public class ParentActivity extends Activity {
     }
 
     private void pickApp() {
+        pickAppList("点一下加入 / 移出【应用黑名单】（★=已在名单里，打开要家长 PIN）",
+                new String[]{"appBlack"}, new boolean[]{true});
+    }
+
+    private void pickAppWhite() {
+        pickAppList("点一下加入 / 移出【应用白名单】（★=已在名单里，不过滤内容）",
+                new String[]{"appWhite"}, new boolean[]{true});
+    }
+
+    /**
+     * APP 名单选择的覆盖层。keys 目前只传一个键（黑名单或白名单），保留数组是为了以后能合并展示。
+     */
+    private void pickAppList(String title, final String[] keys, final boolean[] isBlack) {
         if (appMask != null) return;
         rememberFocus();
+        final String key = keys[0];
         LinearLayout box = Ui.col(this);
         box.setPadding(Ui.dp(this, 24), Ui.dp(this, 16), Ui.dp(this, 24), Ui.dp(this, 16));
-        box.addView(Ui.tv(this, "点一下加入 / 移出黑名单（★=已在名单里）", 20, Ui.TEXT, true));
+        box.addView(Ui.tv(this, title, 20, Ui.TEXT, true));
         box.addView(Ui.gap(this, 8));
         List<ResolveInfo> list = Ui.launchables(this);
         LinearLayout line = null;
@@ -732,16 +829,16 @@ public class ParentActivity extends Activity {
             if (pkg.equals(getPackageName())) continue;
             if (n % 2 == 0) { line = Ui.row(this); line.setLayoutParams(Ui.mwrap()); box.addView(line); }
             n++;
-            final boolean in = Prefs.blPackages(this).contains(pkg);
+            final boolean in = Prefs.split(Prefs.sp(this).getString(key, "")).contains(pkg);
             Button b = Ui.btn(this, (in ? "★ " : "＋ ") + ri.loadLabel(getPackageManager()), in ? Ui.OKC : 0x33FFFFFF);
             b.setTextColor(in ? 0xFF0B1020 : Ui.TEXT);
             Ui.bindAction(null, b, new Runnable() {
                 @Override public void run() {
                     if (appMask == null) return;
-                    if (Prefs.blPackages(ParentActivity.this).contains(pkg)) {
-                        Prefs.delList(ParentActivity.this, "blPackages", pkg);
+                    if (Prefs.split(Prefs.sp(ParentActivity.this).getString(key, "")).contains(pkg)) {
+                        Prefs.delList(ParentActivity.this, key, pkg);
                     } else {
-                        Prefs.addList(ParentActivity.this, "blPackages", pkg);
+                        Prefs.addList(ParentActivity.this, key, pkg);
                     }
                     Ui.removeOverlay(appMask);
                     appMask = null;

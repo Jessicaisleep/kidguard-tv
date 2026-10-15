@@ -781,7 +781,8 @@ public final class Ui {
             ResolveInfo ri = list.get(i);
             final String pkg = ri.activityInfo.packageName;
             if (pkg.equals(a.getPackageName())) continue;
-            if (skipBlocked && Prefs.isPackageBlocked(a, pkg)) continue;
+            // skipBlocked：跳过「APP 黑名单里、且还没被家长放行」的包（= 点开也要家长 PIN 的那种）。
+            if (skipBlocked && Prefs.appLocked(a, pkg)) continue;
             if (n % perRow == 0) { line = row(a); line.setLayoutParams(mwrap()); container.addView(line); }
             n++;
             Button b = btn(a, String.valueOf(ri.loadLabel(appPm)), 0x22FFFFFF);

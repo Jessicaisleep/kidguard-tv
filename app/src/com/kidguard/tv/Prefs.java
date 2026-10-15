@@ -37,6 +37,9 @@ public final class Prefs {
     public static final String DEF_BL_KEYWORDS = "熊出没,小猪佩奇,汪汪队,奥特曼,我的世界,迷你世界,喜羊羊,奶龙,汪汪队立大功,植物大战僵尸";
     /** 片名名单：装完整片名（如《熊出没之怪兽计划》）。与关键字名单是「任一命中就拦」的关系。 */
     public static final String DEF_BL_TITLES   = "";
+    /** 内容白名单：命中就**不拦**（比内容黑名单优先）。适合「关键字名单里放了「小猪」，但「小猪佩奇」要放行」这类例外。 */
+    public static final String DEF_WH_KEYWORDS = "";
+    public static final String DEF_WH_TITLES   = "";
     public static final String DEF_BL_PACKAGES = "com.youku.tv,com.tmall.cm.video,tv.douyin,com.duowan.kiwi,com.qiyi.video,com.tencent.qqlive";
 
     private Prefs() {}
@@ -55,6 +58,16 @@ public final class Prefs {
             if (!p.contains("hardLock")) e.putBoolean("hardLock", true);
             if (!p.contains("blTitles")) e.putString("blTitles", DEF_BL_TITLES);
             if (!p.contains("blPlayBlock")) e.putBoolean("blPlayBlock", true);
+            // 内容白名单（2026-10-16 新语义）
+            if (!p.contains("whKeywords")) e.putString("whKeywords", DEF_WH_KEYWORDS);
+            if (!p.contains("whTitles")) e.putString("whTitles", DEF_WH_TITLES);
+            // APP 黑 / 白名单：从旧键 blPackages / whitelist 一次性搬过来，之后只认新键
+            if (!p.contains("appBlack")) {
+                e.putString("appBlack", p.getString("blPackages", DEF_BL_PACKAGES));
+            }
+            if (!p.contains("appWhite")) {
+                e.putString("appWhite", p.getString("whitelist", ""));
+            }
             e.apply();
             return false;
         }
@@ -75,8 +88,10 @@ public final class Prefs {
                 .putBoolean("hardLock", true)
                 .putString("blKeywords", DEF_BL_KEYWORDS)
                 .putString("blTitles", DEF_BL_TITLES)
-                .putString("blPackages", DEF_BL_PACKAGES)
-                .putString("whitelist", "")
+                .putString("whKeywords", DEF_WH_KEYWORDS)
+                .putString("whTitles", DEF_WH_TITLES)
+                .putString("appBlack", DEF_BL_PACKAGES)
+                .putString("appWhite", "")
                 .putString("apps", "")
                 .putString("grants", "{}")
                 .putString("pin", "")
@@ -303,7 +318,7 @@ public final class Prefs {
     public static boolean hardLock(Context c) { return sp(c).getBoolean("hardLock", true); }
     public static void setHardLock(Context c, boolean v) { sp(c).edit().putBoolean("hardLock", v).apply(); }
 
-    // ---------- 家长临时放行（在电视上按【菜单键】输 PIN 允许播放某 App） ----------
+    // ---------- 家长放行（APP 黑名单的开锁；只开锁，不豁免内容过滤） ----------
 
     /** 家长放行某个包的截止时刻（毫秒）；<=0 = 没放行过。 */
     private static long allowUntil(Context c, String pkg) {
@@ -311,7 +326,7 @@ public final class Prefs {
         return sp(c).getLong("allow_" + pkg, 0L);
     }
 
-    /** 这个包现在是不是被家长放行了（放行期内完全不管它）。 */
+    /** 这个包现在是不是被家长放行了（放行期内打开不再要 PIN；内容过滤 / 时长限制照旧）。 */
     public static boolean isAllowed(Context c, String pkg) {
         long t = allowUntil(c, pkg);
         return t > 0L && System.currentTimeMillis() < t;
@@ -346,18 +361,42 @@ public final class Prefs {
     public static List<String> blTitles(Context c) {
         return split(sp(c).getString("blTitles", DEF_BL_TITLES));
     }
+    public static List<String> whKeywords(Context c) {
+        return split(sp(c).getString("whKeywords", DEF_WH_KEYWORDS));
+    }
+    public static List<String> whTitles(Context c) {
+        return split(sp(c).getString("whTitles", DEF_WH_TITLES));
+    }
+    /** 旧的「黑名单应用」入口，落到 APP 黑名单（见下方 appBlack）。 */
     public static List<String> blPackages(Context c) {
-        return split(sp(c).getString("blPackages", DEF_BL_PACKAGES));
+        return appBlack(c);
     }
 
     /**
-     * 两个名单任一命中即返回（关键字优先）。返回 {词条, 名单名}，没命中返回 null。
-     * 关键字 = 模糊包含（「熊出没」能命中「熊出没之怪兽计划」）；
-     * 片名   = 完整片名（写全名更准，适合「喜羊羊与灰太狼」这种）。
+     * 内容判定：**该拦**才返回命中的词条，否则返回 null。
+     * 返回 {词条, 名单名}，名单名是「关键字」或「片名」。
+     *
+     * 顺序（2026-10-16 与用户定稿）：
+     *   ① 内容白名单先判 —— 命中就**放行**（白 > 黑，用来给黑名单开例外），直接返回 null；
+     *   ② 关键字名单（模糊包含：「熊出没」能命中「熊出没之怪兽计划」）；
+     *   ③ 片名名单（同样是包含匹配，但装完整片名更准）。
+     *
+     * 注意：这只是**内容**规则。APP 白名单（内容过滤豁免）不在这里判，
+     * 由调用方先问 {@link #contentExempt}，豁免的话根本不查内容名单。
      */
-    public static String[] matchBlacklist(Context c, String text) {
+    public static String[] matchContent(Context c, String text) {
         String n = norm(text);
         if (n.isEmpty()) return null;
+        List<String> wk = whKeywords(c);
+        for (int i = 0; i < wk.size(); i++) {
+            String k = norm(wk.get(i));
+            if (!k.isEmpty() && n.contains(k)) return null; // 内容白名单命中 → 放行
+        }
+        List<String> wt = whTitles(c);
+        for (int i = 0; i < wt.size(); i++) {
+            String k = norm(wt.get(i));
+            if (!k.isEmpty() && n.contains(k)) return null; // 内容白名单命中 → 放行
+        }
         List<String> kw = blKeywords(c);
         for (int i = 0; i < kw.size(); i++) {
             String k = norm(kw.get(i));
@@ -370,17 +409,80 @@ public final class Prefs {
         }
         return null;
     }
-    public static List<String> whitelist(Context c) {
-        return split(sp(c).getString("whitelist", ""));
-    }
-    /** 白名单非空时，只允许里面的包；否则用黑名单。 */
-    public static boolean whitelistMode(Context c) { return !whitelist(c).isEmpty(); }
 
-    public static boolean isPackageBlocked(Context c, String pkg) {
+    /**
+     * 兼容旧名：内容判定，语义同 {@link #matchContent}。
+     * 只判内容黑名单（调用方本就用它判定「要不要拦」）。
+     */
+    public static String[] matchBlacklist(Context c, String text) {
+        return matchContent(c, text);
+    }
+    // ---------- APP 黑 / 白名单（2026-10-16 与用户定稿的新语义） ----------
+    //
+    // APP 黑名单：这个 App「打开要家长锁」——电视上输家长 PIN，或在电脑端放行（今日放行 / 本次放行）。
+    //             家长放行**只开锁**：每日时长限制与内容过滤照常生效（和没有黑名单时一样）。
+    // APP 白名单：这是**唯一**的内容过滤豁免——白名单里的 App 不查关键字 / 片名；
+    //             每日时长限制照样生效。
+    // 内容黑名单（关键字 / 片名）是全局规则：除 APP 白名单外，**所有** App 都过滤。
+    //
+    // 存储键：appBlack / appWhite。旧键 blPackages / whitelist 只用于一次性兼容读取。
+
+    /** APP 黑名单（打开要家长锁的包）。 */
+    public static List<String> appBlack(Context c) {
+        String v = sp(c).getString("appBlack", null);
+        if (v == null) v = sp(c).getString("blPackages", DEF_BL_PACKAGES); // 兼容旧键
+        return split(v);
+    }
+    public static void setAppBlack(Context c, List<String> l) {
+        sp(c).edit().putString("appBlack", join(l)).apply();
+    }
+
+    /** APP 白名单（内容过滤豁免的包）。 */
+    public static List<String> appWhite(Context c) {
+        String v = sp(c).getString("appWhite", null);
+        if (v == null) v = sp(c).getString("whitelist", ""); // 兼容旧键
+        return split(v);
+    }
+    public static void setAppWhite(Context c, List<String> l) {
+        sp(c).edit().putString("appWhite", join(l)).apply();
+    }
+
+    /** 旧的「白名单」入口，落到 APP 白名单。 */
+    public static List<String> whitelist(Context c) {
+        return appWhite(c);
+    }
+
+    /**
+     * 这个包是不是「打开要家长锁」：在 APP 黑名单里，且当前没被家长放行。
+     * 三种「已开锁」：① 该 App 有临时放行（电视上输 PIN / 电脑端「本次放行」）；
+     * ② 今日放行开着（电脑端 / 家长面板的「今天放行」，等于今天全开锁）；
+     * ③ 不在 APP 黑名单里。
+     */
+    public static boolean appLocked(Context c, String pkg) {
         if (pkg == null || pkg.isEmpty()) return false;
         if (pkg.equals(c.getPackageName())) return false;
-        if (whitelistMode(c)) return !whitelist(c).contains(pkg);
-        return blPackages(c).contains(pkg);
+        // 安全阀：桌面（HOME）永远不上锁。否则孩子开机就卡在门锁上，谁也进不去。
+        if (isHome(c, pkg)) return false;
+        if (!appBlack(c).contains(pkg)) return false;
+        if (freeToday(c)) return false;
+        return !isAllowed(c, pkg); // 放行期内不再要锁
+    }
+
+    /** 这个包是不是当前的桌面（HOME）。取不到就返回 false。 */
+    public static boolean isHome(Context c, String pkg) {
+        try {
+            android.content.Intent h = new android.content.Intent(android.content.Intent.ACTION_MAIN);
+            h.addCategory(android.content.Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo ri = c.getPackageManager().resolveActivity(h, 0);
+            if (ri != null && ri.activityInfo != null) return pkg.equals(ri.activityInfo.packageName);
+        } catch (Throwable ignored) { }
+        return false;
+    }
+
+    /** 这个包是不是「内容过滤豁免」（APP 白名单）。 */
+    public static boolean contentExempt(Context c, String pkg) {
+        if (pkg == null || pkg.isEmpty()) return false;
+        return appWhite(c).contains(pkg);
     }
 
     public static void addList(Context c, String key, String val) {
