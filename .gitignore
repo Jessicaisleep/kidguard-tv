@@ -32,6 +32,13 @@
 /tools/emu-setup.ps1
 /tools/_rm_skip.py
 
+# ── 本地专用：夸克网盘相关（只在本机用，不入库）────────────
+#  _quark/ = 夸克网盘 API 封装、刮削状态快照、undo_*.json 回滚表、离线 HTML 等
+#  交接文档（继续任务.md / 工作区根 README.md）也只在本地，不进本仓库
+/_quark/
+/_an2.py
+/继续任务.md
+
 # ── 编辑器 / 系统垃圾 ───────────────────────────────────────
 Thumbs.db
 desktop.ini
