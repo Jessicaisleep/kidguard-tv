@@ -58,8 +58,54 @@ function Find-Adb {
   if($g){ return $g.Source }
   return $null
 }
-function AdbRaw([string[]]$a){ return ,@(& $script:Adb @a 2>&1 | ForEach-Object { $_.ToString() }) }
-function AdbDev([string[]]$a){ return ,@(& $script:Adb -s $script:Dev @a 2>&1 | ForEach-Object { $_.ToString() }) }
+# ------------------------------------------------------------ adb 临时目录（防 adb.log 打不开）
+# 2026-10-26 实测到的坑：adb 守护进程启动时要在 %TEMP% 里创建 adb.log。某些机器上这个
+# 文件会被安全软件 / 清理工具占住，adb 直接报
+#   main.cpp:54 cannot open ...\Temp\adb.log: Permission denied
+# 守护进程起不来 → 后面每条 adb 命令都报「连不上电视 / failed to start daemon」，
+# 看起来像网络或电视的问题，其实跟网络无关（ping 通、5555 也通）。
+# 对策：① 把 TEMP/TMP 指到脚本旁边的可写目录；② 万一还是失败，换目录自愈重试一次。
+$script:AdbTmp = $null
+function Init-AdbTemp {
+  $cands = @((Join-Path $PSScriptRoot '_tmp'))
+  try { $cands += (Join-Path $env:TEMP 'kidguard-tmp') } catch { }
+  foreach ($c in $cands) {
+    try {
+      if (-not (Test-Path -LiteralPath $c)) { New-Item -ItemType Directory -Force -Path $c | Out-Null }
+      $probe = Join-Path $c ('.kgprobe_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+      [System.IO.File]::WriteAllText($probe, 'x')
+      Remove-Item -LiteralPath $probe -Force
+      $env:TEMP = $c
+      $env:TMP  = $c
+      $script:AdbTmp = $c
+      return $c
+    } catch { }
+  }
+  return $null
+}
+$script:AdbTmp = Init-AdbTemp
+
+# 带自愈的 adb 调用：守护进程起不来时换目录重启一次
+function Run-Adb([string[]]$a) {
+  $o = @(& $script:Adb @a 2>&1 | ForEach-Object { $_.ToString() })
+  $txt = ($o -join "`n")
+  if ($txt -match 'adb\.log' -or $txt -match 'failed to start daemon' -or $txt -match 'cannot connect to daemon') {
+    $alt = Join-Path $PSScriptRoot '_tmp2'
+    try {
+      if (-not (Test-Path -LiteralPath $alt)) { New-Item -ItemType Directory -Force -Path $alt | Out-Null }
+      $probe = Join-Path $alt ('.kgprobe_' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+      [System.IO.File]::WriteAllText($probe, 'x')
+      Remove-Item -LiteralPath $probe -Force
+      $env:TEMP = $alt; $env:TMP = $alt
+      $null = (& $script:Adb kill-server 2>&1)
+      Start-Sleep -Milliseconds 600
+      $o = @(& $script:Adb @a 2>&1 | ForEach-Object { $_.ToString() })
+    } catch { }
+  }
+  return $o
+}
+function AdbRaw([string[]]$a){ return ,@(Run-Adb $a) }
+function AdbDev([string[]]$a){ return ,@(Run-Adb ((@('-s',$script:Dev)) + $a)) }
 function Sh([string]$c){ return ,(AdbDev @('shell', $c)) }
 function GetProp([string]$k){ $v = @(Sh "getprop $k"); if($v.Count -eq 0){ return '' } ; return ($v[0]).Trim() }
 function Get-Sdk { $v = 0; [void][int]::TryParse((GetProp 'ro.build.version.sdk'), [ref]$v); return $v }

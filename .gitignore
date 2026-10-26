@@ -39,6 +39,10 @@
 /_an2.py
 /继续任务.md
 
+# ── adb 临时目录（脚本运行时自建，防 adb.log 打不开）────────
+/dist/tools/_tmp/
+/dist/tools/_tmp2/
+
 # ── 编辑器 / 系统垃圾 ───────────────────────────────────────
 Thumbs.db
 desktop.ini
